@@ -18,7 +18,7 @@ pub const Chunk = struct {
         return Chunk{
             .code = ArrayList(u8).init(allocator),
             .constants = ArrayList(Value).init(allocator),
-            .lines = ArrayList(usize).init(allocator)
+            .lines = ArrayList(usize).init(allocator),
         };
     }
 
@@ -61,7 +61,7 @@ pub const Chunk = struct {
             else => {
                 std.debug.warn("Unknown opcode: {}\n", instruction);
                 return offset + 1;
-            }
+            },
         }
     }
 
@@ -72,7 +72,7 @@ pub const Chunk = struct {
 
     fn constantInstruction(self: *Chunk, name: []const u8, offset: usize) usize {
         // TODO, make a constantInstruction command
-        const constant = self.code.at(offset+1);
+        const constant = self.code.at(offset + 1);
         std.debug.warn("{} {} ", name, constant);
         printValue(self.constants.at(constant));
         std.debug.warn("\n");
