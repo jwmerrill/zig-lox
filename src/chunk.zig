@@ -12,22 +12,25 @@ pub const OpCode = enum(u8) {
 pub const Chunk = struct {
     code: ArrayList(u8),
     constants: ArrayList(Value),
-
+    lines: ArrayList(usize),
 
     pub fn init(allocator: *Allocator) Chunk {
         return Chunk{
             .code = ArrayList(u8).init(allocator),
-            .constants = ArrayList(Value).init(allocator)
+            .constants = ArrayList(Value).init(allocator),
+            .lines = ArrayList(usize).init(allocator)
         };
     }
 
     pub fn deinit(self: *Chunk) void {
         self.code.deinit();
         self.constants.deinit();
+        self.lines.deinit();
     }
 
-    pub fn write(self: *Chunk, byte: u8) !void {
+    pub fn write(self: *Chunk, byte: u8, line: usize) !void {
         try self.code.append(byte);
+        try self.lines.append(line);
     }
 
     pub fn disassemble(self: *Chunk, name: []const u8) void {
@@ -40,8 +43,17 @@ pub const Chunk = struct {
     }
 
     fn disassembleInstruction(self: *Chunk, offset: usize) usize {
+        // Print offset
         std.debug.warn("{:0>4} ", offset);
 
+        // Print line
+        if (offset > 0 and self.lines.at(offset) == self.lines.at(offset - 1)) {
+            std.debug.warn("   | ");
+        } else {
+            std.debug.warn("{: >4} ", self.lines.at(offset));
+        }
+
+        // Print instruction
         const instruction = @intToEnum(OpCode, self.code.at(offset));
         switch (instruction) {
             .OP_RETURN => return self.simpleInstruction("OP_RETURN", offset),
