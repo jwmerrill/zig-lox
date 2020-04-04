@@ -1,2 +1,4 @@
 - Maybe disassemble should accept a stream to write to instead of writing directly to stderr
 - What are the tradeoffs for making `OpCode` an `enum` vs. an `enum(u8)`. How is `ArrayList(OpCode)` actually stored if `OpCode` is an `enum`?
+    - I guess we need the bytecode buffer to store data like indexes into the constants array in addition to opcodes. Forces us to say the underlying datatype of the enum.
+- Is there an advantage to storing operands as later bytes, instead of making the opcodes a richer data structure?
