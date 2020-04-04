@@ -62,6 +62,26 @@ pub const VM = struct {
                 },
                 .Negate => {
                     try self.push(-self.pop());
+                },
+                .Add => {
+                    const rhs = self.pop();
+                    const lhs = self.pop();
+                    try self.push(lhs+rhs);
+                },
+                .Subtract => {
+                    const rhs = self.pop();
+                    const lhs = self.pop();
+                    try self.push(lhs-rhs);
+                },
+                .Multiply => {
+                    const rhs = self.pop();
+                    const lhs = self.pop();
+                    try self.push(lhs*rhs);
+                },
+                .Divide => {
+                    const rhs = self.pop();
+                    const lhs = self.pop();
+                    try self.push(lhs/rhs);
                 }
             }
         }

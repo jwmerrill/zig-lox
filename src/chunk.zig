@@ -8,6 +8,10 @@ pub const OpCode = enum(u8) {
     Return,
     Constant,
     Negate,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
 };
 
 pub const Chunk = struct {
@@ -64,6 +68,10 @@ pub const Chunk = struct {
             .Return => return self.simpleInstruction("OP_RETURN", offset),
             .Constant => return self.constantInstruction("OP_CONSTANT", offset),
             .Negate => return self.simpleInstruction("OP_NEGATE", offset),
+            .Add => return self.simpleInstruction("OP_ADD", offset),
+            .Subtract => return self.simpleInstruction("OP_SUBTRACT", offset),
+            .Multiply => return self.simpleInstruction("OP_MULTIPLY", offset),
+            .Divide => return self.simpleInstruction("OP_DIVIDE", offset),
         }
     }
 
