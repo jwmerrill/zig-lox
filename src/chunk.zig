@@ -64,15 +64,15 @@ pub const Chunk = struct {
 
         // Print instruction
         const instruction = @intToEnum(OpCode, self.code.at(offset));
-        switch (instruction) {
-            .Return => return self.simpleInstruction("OP_RETURN", offset),
-            .Constant => return self.constantInstruction("OP_CONSTANT", offset),
-            .Negate => return self.simpleInstruction("OP_NEGATE", offset),
-            .Add => return self.simpleInstruction("OP_ADD", offset),
-            .Subtract => return self.simpleInstruction("OP_SUBTRACT", offset),
-            .Multiply => return self.simpleInstruction("OP_MULTIPLY", offset),
-            .Divide => return self.simpleInstruction("OP_DIVIDE", offset),
-        }
+        return switch (instruction) {
+            .Return => self.simpleInstruction("OP_RETURN", offset),
+            .Constant => self.constantInstruction("OP_CONSTANT", offset),
+            .Negate => self.simpleInstruction("OP_NEGATE", offset),
+            .Add => self.simpleInstruction("OP_ADD", offset),
+            .Subtract => self.simpleInstruction("OP_SUBTRACT", offset),
+            .Multiply => self.simpleInstruction("OP_MULTIPLY", offset),
+            .Divide => self.simpleInstruction("OP_DIVIDE", offset),
+        };
     }
 
     fn simpleInstruction(self: *Chunk, name: []const u8, offset: usize) usize {
