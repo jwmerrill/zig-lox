@@ -1,0 +1,2 @@
+- Maybe disassemble should accept a stream to write to instead of writing directly to stderr
+- What are the tradeoffs for making `OpCode` an `enum` vs. an `enum(u8)`. How is `ArrayList(OpCode)` actually stored if `OpCode` is an `enum`?
