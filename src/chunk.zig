@@ -39,29 +39,32 @@ pub const Chunk = struct {
         }
     }
 
-    fn disassembleInstruction(self: *Chunk, i: usize) usize {
-        std.debug.warn("{:0>4} ", i);
+    fn disassembleInstruction(self: *Chunk, offset: usize) usize {
+        std.debug.warn("{:0>4} ", offset);
 
-        const instruction = @intToEnum(OpCode, self.code.at(i));
+        const instruction = @intToEnum(OpCode, self.code.at(offset));
         switch (instruction) {
-            .OP_RETURN => {
-                // TODO, make a simpleInstruction command
-                std.debug.warn("OP_RETURN\n");
-                return i + 1;
-            },
-            .OP_CONSTANT => {
-                // TODO, make a constantInstruction command
-                const constant = self.code.at(i+1);
-                std.debug.warn("OP_CONSTANT {} ", constant);
-                printValue(self.constants.at(constant));
-                std.debug.warn("\n");
-                return i + 2;
-            },
+            .OP_RETURN => return self.simpleInstruction("OP_RETURN", offset),
+            .OP_CONSTANT => return self.constantInstruction("OP_CONSTANT", offset),
             else => {
                 std.debug.warn("Unknown opcode: {}\n", instruction);
-                return i + 1;
+                return offset + 1;
             }
         }
+    }
+
+    fn simpleInstruction(self: *Chunk, name: []const u8, offset: usize) usize {
+        std.debug.warn("{}\n", name);
+        return offset + 1;
+    }
+
+    fn constantInstruction(self: *Chunk, name: []const u8, offset: usize) usize {
+        // TODO, make a constantInstruction command
+        const constant = self.code.at(offset+1);
+        std.debug.warn("{} {} ", name, constant);
+        printValue(self.constants.at(constant));
+        std.debug.warn("\n");
+        return offset + 2;
     }
 
     pub fn addConstant(self: *Chunk, value: Value) !u8 {
