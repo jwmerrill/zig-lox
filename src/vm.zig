@@ -39,7 +39,7 @@ pub const VM = struct {
 
     fn run(self: *VM) !InterpretResult {
         var out = InterpretResult.RuntimeError;
-        blk: while (true) {
+        while (true) {
             if (verbose) {
                 // Print debugging information
                 self.printStack();
@@ -53,14 +53,16 @@ pub const VM = struct {
                     printValue(self.pop());
                     std.debug.warn("\n");
                     out = InterpretResult.Ok;
-                    break :blk;
+                    break;
                 },
                 .Constant => {
-                    // TODO, abstract out reading a byte
                     const constant = self.readByte();
                     const value = self.chunk.constants.at(constant);
                     try self.push(value);
                 },
+                .Negate => {
+                    try self.push(-self.pop());
+                }
             }
         }
 

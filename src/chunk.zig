@@ -7,6 +7,7 @@ const printValue = @import("./value.zig").printValue;
 pub const OpCode = enum(u8) {
     Return,
     Constant,
+    Negate,
 };
 
 pub const Chunk = struct {
@@ -31,6 +32,10 @@ pub const Chunk = struct {
     pub fn write(self: *Chunk, byte: u8, line: usize) !void {
         try self.code.append(byte);
         try self.lines.append(line);
+    }
+
+    pub fn writeOp(self: *Chunk, op: OpCode, line: usize) !void {
+        try self.write(@enumToInt(op), line);
     }
 
     pub fn disassemble(self: *Chunk, name: []const u8) void {
@@ -58,10 +63,7 @@ pub const Chunk = struct {
         switch (instruction) {
             .Return => return self.simpleInstruction("OP_RETURN", offset),
             .Constant => return self.constantInstruction("OP_CONSTANT", offset),
-            else => {
-                std.debug.warn("Unknown opcode: {}\n", instruction);
-                return offset + 1;
-            },
+            .Negate => return self.simpleInstruction("OP_NEGATE", offset),
         }
     }
 
