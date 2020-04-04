@@ -42,7 +42,7 @@ pub const Chunk = struct {
         }
     }
 
-    fn disassembleInstruction(self: *Chunk, offset: usize) usize {
+    pub fn disassembleInstruction(self: *Chunk, offset: usize) usize {
         // Print offset
         std.debug.warn("{:0>4} ", offset);
 
