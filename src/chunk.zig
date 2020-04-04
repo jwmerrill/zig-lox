@@ -5,8 +5,8 @@ const Value = @import("./value.zig").Value;
 const printValue = @import("./value.zig").printValue;
 
 pub const OpCode = enum(u8) {
-    OP_RETURN,
-    OP_CONSTANT,
+    Return,
+    Constant,
 };
 
 pub const Chunk = struct {
@@ -56,8 +56,8 @@ pub const Chunk = struct {
         // Print instruction
         const instruction = @intToEnum(OpCode, self.code.at(offset));
         switch (instruction) {
-            .OP_RETURN => return self.simpleInstruction("OP_RETURN", offset),
-            .OP_CONSTANT => return self.constantInstruction("OP_CONSTANT", offset),
+            .Return => return self.simpleInstruction("OP_RETURN", offset),
+            .Constant => return self.constantInstruction("OP_CONSTANT", offset),
             else => {
                 std.debug.warn("Unknown opcode: {}\n", instruction);
                 return offset + 1;

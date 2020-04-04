@@ -9,9 +9,9 @@ const printValue = @import("./value.zig").printValue;
 const verbose = true;
 
 pub const InterpretResult = enum {
-    OK,
-    COMPILE_ERROR,
-    RUNTIME_ERROR,
+    Ok,
+    CompileError,
+    RuntimeError,
 };
 
 pub const VM = struct {
@@ -38,7 +38,7 @@ pub const VM = struct {
     }
 
     fn run(self: *VM) !InterpretResult {
-        var out = InterpretResult.RUNTIME_ERROR;
+        var out = InterpretResult.RuntimeError;
         blk: while (true) {
             if (verbose) {
                 // Print debugging information
@@ -49,13 +49,13 @@ pub const VM = struct {
             const instruction = self.readByte();
 
             switch (@intToEnum(OpCode, instruction)) {
-                .OP_RETURN => {
+                .Return => {
                     printValue(self.pop());
                     std.debug.warn("\n");
-                    out = InterpretResult.OK;
+                    out = InterpretResult.Ok;
                     break :blk;
                 },
-                .OP_CONSTANT => {
+                .Constant => {
                     // TODO, abstract out reading a byte
                     const constant = self.readByte();
                     const value = self.chunk.constants.at(constant);
