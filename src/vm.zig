@@ -5,6 +5,7 @@ const Chunk = @import("./chunk.zig").Chunk;
 const OpCode = @import("./chunk.zig").OpCode;
 const Value = @import("./value.zig").Value;
 const printValue = @import("./value.zig").printValue;
+const compile = @import("./compiler.zig").compile;
 
 const verbose = true;
 
@@ -31,10 +32,9 @@ pub const VM = struct {
         self.stack.deinit();
     }
 
-    pub fn interpret(self: *VM, chunk: *Chunk) !InterpretResult {
-        self.chunk = chunk;
-        self.ip = 0;
-        return self.run();
+    pub fn interpret(self: *VM, source: []const u8) InterpretResult {
+        _ = compile(source);
+        return .Ok;
     }
 
     fn run(self: *VM) !InterpretResult {
@@ -66,23 +66,23 @@ pub const VM = struct {
                 .Add => {
                     const rhs = self.pop();
                     const lhs = self.pop();
-                    try self.push(lhs+rhs);
+                    try self.push(lhs + rhs);
                 },
                 .Subtract => {
                     const rhs = self.pop();
                     const lhs = self.pop();
-                    try self.push(lhs-rhs);
+                    try self.push(lhs - rhs);
                 },
                 .Multiply => {
                     const rhs = self.pop();
                     const lhs = self.pop();
-                    try self.push(lhs*rhs);
+                    try self.push(lhs * rhs);
                 },
                 .Divide => {
                     const rhs = self.pop();
                     const lhs = self.pop();
-                    try self.push(lhs/rhs);
-                }
+                    try self.push(lhs / rhs);
+                },
             }
         }
 
