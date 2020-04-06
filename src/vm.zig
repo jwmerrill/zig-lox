@@ -16,12 +16,14 @@ pub const InterpretResult = enum {
 };
 
 pub const VM = struct {
+    allocator: *Allocator,
     chunk: *Chunk,
     ip: usize, // NOTE, book uses a byte pointer for this
     stack: ArrayList(Value), // NOTE, book uses a fixed size stack
 
     pub fn init(allocator: *Allocator) VM {
         return VM{
+            .allocator = allocator,
             .chunk = undefined,
             .ip = undefined,
             .stack = std.ArrayList(Value).init(allocator),
@@ -32,9 +34,17 @@ pub const VM = struct {
         self.stack.deinit();
     }
 
-    pub fn interpret(self: *VM, source: []const u8) InterpretResult {
-        _ = compile(source);
-        return .Ok;
+    pub fn interpret(self: *VM, source: []const u8) !InterpretResult {
+        var chunk = Chunk.init(self.allocator);
+        defer chunk.deinit();
+
+        const success = try compile(source, &chunk);
+        if (!success) return .CompileError;
+
+        self.chunk = &chunk;
+        self.ip = 0;
+
+        return try self.run();
     }
 
     fn run(self: *VM) !InterpretResult {

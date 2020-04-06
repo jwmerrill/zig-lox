@@ -39,7 +39,7 @@ fn runFile(allocator: *Allocator, path: []const u8) !void {
 
     const source = try std.io.readFileAlloc(allocator, path);
     defer allocator.free(source);
-    const result = vm.interpret(source);
+    const result = try vm.interpret(source);
 
     if (result == .CompileError) process.exit(65);
     if (result == .RuntimeError) process.exit(70);

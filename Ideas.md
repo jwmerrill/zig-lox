@@ -5,3 +5,9 @@
 - How do we find out if we forgot to deinitialize something in deinit?
 - Use slices for many places the book uses pointers, e.g. for the scanner state and for lexemes
 - Do identifierType switch with comptime
+- Represent compile and interpreter errors using Zig's error system
+- Note, skipping parse "rules" in favor of separate switches for precedence and unary/binary parsing. Slightly more verbose, but simpler.
+- Maybe move getPrecedence to a different file?
+- Writing "try" a lot. Are there any suggested style improvements?
+- Move "verbose" flags into a "flags" or "debug" file. Maybe make checks comptime?
+- Instead of returning null from peek in scanner, be more careful about checking if we're at the end?
