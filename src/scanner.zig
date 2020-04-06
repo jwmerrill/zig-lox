@@ -87,7 +87,8 @@ pub const Scanner = struct {
 
         if (self.isAtEnd()) return self.makeToken(.Eof);
 
-        const c = self.advance();
+        const c = self.peek();
+        self.advance();
 
         return switch (c) {
             '(' => self.makeToken(.LeftParen),
@@ -115,10 +116,8 @@ pub const Scanner = struct {
         };
     }
 
-    fn advance(self: *Scanner) u8 {
-        const char = self.peek();
+    fn advance(self: *Scanner) void {
         self.current += 1;
-        return char;
     }
 
     fn peek(self: *Scanner) u8 {
@@ -164,32 +163,32 @@ pub const Scanner = struct {
         // TODO, what about escaped double quotes?
         while (self.peek() != '"' and !self.isAtEnd()) {
             if (self.peek() == '\n') self.line += 1;
-            _ = self.advance();
+            self.advance();
         }
 
         if (self.isAtEnd()) return self.makeError("Unterminated string.");
 
         // The closing quote
-        _ = self.advance();
+        self.advance();
         return self.makeToken(.String);
     }
 
     fn scanNumber(self: *Scanner) Token {
-        while (isDigit(self.peek())) _ = self.advance();
+        while (isDigit(self.peek())) self.advance();
 
         // Look for a fractional part.
         if (self.peek() == '.' and isDigit(self.peekNext())) {
             // Consume the "."
-            _ = self.advance();
+            self.advance();
 
-            while (isDigit(self.peek())) _ = self.advance();
+            while (isDigit(self.peek())) self.advance();
         }
 
         return self.makeToken(.Number);
     }
 
     fn scanIdentifier(self: *Scanner) Token {
-        while (isAlpha(self.peek()) or isDigit(self.peek())) _ = self.advance();
+        while (isAlpha(self.peek()) or isDigit(self.peek())) self.advance();
 
         return self.makeToken(self.identifierType());
     }
@@ -236,16 +235,16 @@ pub const Scanner = struct {
     fn skipWhitespace(self: *Scanner) void {
         while (true) {
             switch (self.peek()) {
-                ' ', '\r', '\t' => _ = self.advance(),
+                ' ', '\r', '\t' => self.advance(),
                 '\n' => {
                     self.line += 1;
-                    _ = self.advance();
+                    self.advance();
                 },
                 '/' => {
                     if (self.peekNext() == '/') {
                         // A comment goes until the end of the line
                         while (self.peek() != '\n' and !self.isAtEnd()) {
-                            _ = self.advance();
+                            self.advance();
                         }
                     } else {
                         return;
