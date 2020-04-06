@@ -6,8 +6,7 @@ const OpCode = @import("./chunk.zig").OpCode;
 const Value = @import("./value.zig").Value;
 const printValue = @import("./value.zig").printValue;
 const compile = @import("./compiler.zig").compile;
-
-const verbose = true;
+const verbose = @import("./debug.zig").verbose;
 
 pub const InterpretResult = enum {
     Ok,

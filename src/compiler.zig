@@ -6,8 +6,7 @@ const TokenType = @import("./scanner.zig").TokenType;
 const Chunk = @import("./chunk.zig").Chunk;
 const OpCode = @import("./chunk.zig").OpCode;
 const Value = @import("./value.zig").Value;
-
-const verbose = true;
+const verbose = @import("./debug.zig").verbose;
 
 pub fn compile(source: []const u8, chunk: *Chunk) !bool {
     var scanner = Scanner.init(source);

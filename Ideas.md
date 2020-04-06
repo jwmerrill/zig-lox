@@ -9,5 +9,5 @@
 - Note, skipping parse "rules" in favor of separate switches for precedence and unary/binary parsing. Slightly more verbose, but simpler.
 - Maybe move getPrecedence to a different file?
 - Writing "try" a lot. Are there any suggested style improvements?
-- Move "verbose" flags into a "flags" or "debug" file. Maybe make checks comptime?
+- [x] Move "verbose" flags into a "flags" or "debug" file.
 - Instead of returning null from peek in scanner, be more careful about checking if we're at the end?
