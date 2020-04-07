@@ -7,6 +7,9 @@ const printValue = @import("./value.zig").printValue;
 pub const OpCode = enum(u8) {
     Return,
     Constant,
+    Nil,
+    True,
+    False,
     Negate,
     Add,
     Subtract,
@@ -67,6 +70,9 @@ pub const Chunk = struct {
         return switch (instruction) {
             .Return => self.simpleInstruction("OP_RETURN", offset),
             .Constant => self.constantInstruction("OP_CONSTANT", offset),
+            .Nil => self.simpleInstruction("OP_NIL", offset),
+            .True => self.simpleInstruction("OP_TRUE", offset),
+            .False => self.simpleInstruction("OP_FALSE", offset),
             .Negate => self.simpleInstruction("OP_NEGATE", offset),
             .Add => self.simpleInstruction("OP_ADD", offset),
             .Subtract => self.simpleInstruction("OP_SUBTRACT", offset),

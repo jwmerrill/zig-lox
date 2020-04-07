@@ -218,8 +218,9 @@ const Parser = struct {
             .Number => return self.number(),
 
             // Keywords.
-            .And, .Class, .Else, .False, .For, .Fun, .If, .Nil, .Or => {},
-            .Print, .Return, .Super, .This, .True, .Var, .While, .Error => {},
+            .Nil, .True, .False => return self.literal(),
+            .And, .Class, .Else, .For, .Fun, .If, .Or => {},
+            .Print, .Return, .Super, .This, .Var, .While, .Error => {},
             .Eof => {},
         }
 
@@ -256,6 +257,15 @@ const Parser = struct {
         try self.emitConstant(Value{ .Number = value });
     }
 
+    pub fn literal(self: *Parser) !void {
+        switch (self.previous.tokenType) {
+            .Nil => try self.emitOp(.Nil),
+            .True => try self.emitOp(.True),
+            .False => try self.emitOp(.False),
+            else => self.err("Unexpected literal"), // unreachable
+        }
+    }
+
     pub fn grouping(self: *Parser) !void {
         try self.expression();
         self.consume(.RightParen, "Expect ')' after expression.");
@@ -270,7 +280,7 @@ const Parser = struct {
         // Emit the operator instruction
         switch (operatorType) {
             .Minus => try self.emitOp(.Negate),
-            else => self.err("Unexpected unary operator"),
+            else => self.err("Unexpected unary operator"), // unreachable
         }
     }
 
@@ -284,7 +294,7 @@ const Parser = struct {
             .Minus => try self.emitOp(.Subtract),
             .Star => try self.emitOp(.Multiply),
             .Slash => try self.emitOp(.Divide),
-            else => self.err("Unexpected binary operator"),
+            else => self.err("Unexpected binary operator"), // unreachable
         }
     }
 };

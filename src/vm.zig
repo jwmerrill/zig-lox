@@ -69,6 +69,9 @@ pub const VM = struct {
                     const value = self.chunk.constants.at(constant);
                     try self.push(value);
                 },
+                .Nil => try self.push(Value{ .Nil = undefined }),
+                .True => try self.push(Value{ .Bool = true }),
+                .False => try self.push(Value{ .Bool = false }),
                 .Negate => {
                     const boxed = self.pop();
                     switch (boxed) {
@@ -151,6 +154,10 @@ pub const VM = struct {
         return self.stack.pop();
     }
 
+    fn resetStack(self: *VM) void {
+        self.stack.shrink(0);
+    }
+
     fn printStack(self: *VM) void {
         std.debug.warn("          ");
         for (self.stack.toSlice()) |value| {
@@ -169,6 +176,6 @@ pub const VM = struct {
         std.debug.warn(message);
         std.debug.warn("\n[line {}] in script\n", line);
 
-        // Book has a "resetStack()" call here. Do we need it?
+        self.resetStack();
     }
 };

@@ -194,7 +194,7 @@ pub const Scanner = struct {
     }
 
     fn identifierType(self: *Scanner) TokenType {
-        return switch (self.peek()) {
+        return switch (self.start[0]) {
             'a' => self.checkKeyword(1, "nd", .And),
             'c' => self.checkKeyword(1, "lass", .Class),
             'e' => self.checkKeyword(1, "lse", .Else),
@@ -207,7 +207,7 @@ pub const Scanner = struct {
             'v' => self.checkKeyword(1, "ar", .Var),
             'w' => self.checkKeyword(1, "hile", .While),
             'f' => {
-                return switch (self.peekNext()) {
+                return switch (self.start[1]) {
                     'a' => self.checkKeyword(2, "lse", .False),
                     'o' => self.checkKeyword(2, "r", .For),
                     'u' => self.checkKeyword(2, "n", .Fun),
@@ -215,7 +215,7 @@ pub const Scanner = struct {
                 };
             },
             't' => {
-                return switch (self.peekNext()) {
+                return switch (self.start[1]) {
                     'h' => self.checkKeyword(2, "is", .This),
                     'r' => self.checkKeyword(2, "ue", .True),
                     else => .Identifier,

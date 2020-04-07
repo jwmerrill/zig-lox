@@ -1,12 +1,6 @@
 const std = @import("std");
 
-pub const ValueType = enum {
-    Bool,
-    Nil,
-    Number,
-};
-
-pub const Value = union(ValueType) {
+pub const Value = union(enum) {
     Bool: bool,
     Nil,
     Number: f64,
