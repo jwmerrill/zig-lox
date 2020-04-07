@@ -42,7 +42,7 @@ const Precedence = enum(u8) {
 //
 // See https://github.com/ziglang/zig/issues/2971
 const CompilerErrors = error{
-    // Can happen when we try to emit bytecode or constants
+// Can happen when we try to emit bytecode or constants
     OutOfMemory,
     // Can happen when we try to parse floats
     InvalidCharacter,
@@ -253,7 +253,7 @@ const Parser = struct {
 
     pub fn number(self: *Parser) !void {
         const value = try std.fmt.parseFloat(f64, self.previous.lexeme);
-        try self.emitConstant(value);
+        try self.emitConstant(Value{ .Number = value });
     }
 
     pub fn grouping(self: *Parser) !void {

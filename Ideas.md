@@ -11,3 +11,6 @@
 - Writing "try" a lot. Are there any suggested style improvements?
 - [x] Move "verbose" flags into a "flags" or "debug" file.
 - Instead of returning null from peek in scanner, be more careful about checking if we're at the end?
+- Zig's way of switching on unions and constructing union members is way nicer than the macros in C in the book
+- Can we cut down on boilerplate in VM's Add/Subtract/Multiply/Divide routines?
+- Fix printing of float values

@@ -70,27 +70,63 @@ pub const VM = struct {
                     try self.push(value);
                 },
                 .Negate => {
-                    try self.push(-self.pop());
+                    const boxed = self.pop();
+                    switch (boxed) {
+                        .Bool, .Nil => self.runtimeError("Operand must be a number."),
+                        .Number => |value| try self.push(Value{ .Number = -value }),
+                    }
                 },
                 .Add => {
-                    const rhs = self.pop();
-                    const lhs = self.pop();
-                    try self.push(lhs + rhs);
+                    const rhsBoxed = self.pop();
+                    const lhsBoxed = self.pop();
+                    switch (lhsBoxed) {
+                        .Bool, .Nil => self.runtimeError("Operands must be numbers."),
+                        .Number => |lhs| {
+                            switch (rhsBoxed) {
+                                .Bool, .Nil => self.runtimeError("Operands must be numbers."),
+                                .Number => |rhs| try self.push(Value{ .Number = lhs + rhs }),
+                            }
+                        },
+                    }
                 },
                 .Subtract => {
-                    const rhs = self.pop();
-                    const lhs = self.pop();
-                    try self.push(lhs - rhs);
+                    const rhsBoxed = self.pop();
+                    const lhsBoxed = self.pop();
+                    switch (lhsBoxed) {
+                        .Bool, .Nil => self.runtimeError("Operands must be numbers."),
+                        .Number => |lhs| {
+                            switch (rhsBoxed) {
+                                .Bool, .Nil => self.runtimeError("Operands must be numbers."),
+                                .Number => |rhs| try self.push(Value{ .Number = lhs - rhs }),
+                            }
+                        },
+                    }
                 },
                 .Multiply => {
-                    const rhs = self.pop();
-                    const lhs = self.pop();
-                    try self.push(lhs * rhs);
+                    const rhsBoxed = self.pop();
+                    const lhsBoxed = self.pop();
+                    switch (lhsBoxed) {
+                        .Bool, .Nil => self.runtimeError("Operands must be numbers."),
+                        .Number => |lhs| {
+                            switch (rhsBoxed) {
+                                .Bool, .Nil => self.runtimeError("Operands must be numbers."),
+                                .Number => |rhs| try self.push(Value{ .Number = lhs * rhs }),
+                            }
+                        },
+                    }
                 },
                 .Divide => {
-                    const rhs = self.pop();
-                    const lhs = self.pop();
-                    try self.push(lhs / rhs);
+                    const rhsBoxed = self.pop();
+                    const lhsBoxed = self.pop();
+                    switch (lhsBoxed) {
+                        .Bool, .Nil => self.runtimeError("Operands must be numbers."),
+                        .Number => |lhs| {
+                            switch (rhsBoxed) {
+                                .Bool, .Nil => self.runtimeError("Operands must be numbers."),
+                                .Number => |rhs| try self.push(Value{ .Number = lhs / rhs }),
+                            }
+                        },
+                    }
                 },
             }
         }
@@ -123,5 +159,16 @@ pub const VM = struct {
             std.debug.warn(" ]");
         }
         std.debug.warn("\n");
+    }
+
+    fn runtimeError(self: *VM, comptime message: []const u8) void {
+        // TODO, allow passing extra parameters here. Need varargs now,
+        // but they're going away in zig 0.6.
+        const line = self.chunk.code.at(self.ip);
+
+        std.debug.warn(message);
+        std.debug.warn("\n[line {}] in script\n", line);
+
+        // Book has a "resetStack()" call here. Do we need it?
     }
 };
