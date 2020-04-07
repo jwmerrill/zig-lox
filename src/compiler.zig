@@ -59,8 +59,9 @@ fn getPrecedence(tokenType: TokenType) Precedence {
         .Slash, .Star => .Factor,
 
         // One or two character tokens.
-        .Bang, .BangEqual, .Equal, .EqualEqual, .Greater => .None,
-        .GreaterEqual, .Less, .LessEqual => .None,
+        .BangEqual, .EqualEqual => .Equality,
+        .Greater, .GreaterEqual, .Less, .LessEqual => .Comparison,
+        .Bang, .Equal => .None,
 
         // Literals.
         .Identifier, .String, .Number => .None,
@@ -211,8 +212,13 @@ const Parser = struct {
 
             // One or two character tokens.
             .Bang => return self.unary(),
-            .BangEqual, .Equal, .EqualEqual, .Greater => {},
-            .GreaterEqual, .Less, .LessEqual => {},
+            .BangEqual,
+            .EqualEqual,
+            .Greater,
+            .GreaterEqual,
+            .Less,
+            => {},
+            .LessEqual, .Equal => {},
 
             // Literals.
             .Identifier, .String => {},
@@ -238,8 +244,10 @@ const Parser = struct {
             .Slash, .Star => return self.binary(),
 
             // One or two character tokens.
-            .Bang, .BangEqual, .Equal, .EqualEqual, .Greater => {},
-            .GreaterEqual, .Less, .LessEqual => {},
+            .Bang => {},
+            .BangEqual, .EqualEqual, .Greater => return self.binary(),
+            .GreaterEqual, .Less, .LessEqual => return self.binary(),
+            .Equal => {},
 
             // Literals.
             .Identifier, .String, .Number => {},
@@ -292,6 +300,23 @@ const Parser = struct {
         try self.parsePrecedence(getPrecedence(operatorType).next());
 
         switch (operatorType) {
+            .BangEqual => {
+                try self.emitOp(.Equal);
+                try self.emitOp(.Not);
+            },
+            .EqualEqual => try self.emitOp(.Equal),
+            .Greater => try self.emitOp(.Greater),
+            .GreaterEqual => {
+                // Note, incorrect IEEE semantics for NaN, same as book
+                try self.emitOp(.Less);
+                try self.emitOp(.Not);
+            },
+            .Less => try self.emitOp(.Less),
+            .LessEqual => {
+                // Note, incorrect IEEE semantics for NaN, same as book
+                try self.emitOp(.Greater);
+                try self.emitOp(.Not);
+            },
             .Plus => try self.emitOp(.Add),
             .Minus => try self.emitOp(.Subtract),
             .Star => try self.emitOp(.Multiply),

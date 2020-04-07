@@ -72,6 +72,37 @@ pub const VM = struct {
                 .Nil => try self.push(Value{ .Nil = undefined }),
                 .True => try self.push(Value{ .Bool = true }),
                 .False => try self.push(Value{ .Bool = false }),
+                .Equal => {
+                    const b = self.pop();
+                    const a = self.pop();
+                    try self.push(Value{ .Bool = a.equals(b) });
+                },
+                .Greater => {
+                    const rhsBoxed = self.pop();
+                    const lhsBoxed = self.pop();
+                    switch (lhsBoxed) {
+                        .Bool, .Nil => self.runtimeError("Operands must be numbers."),
+                        .Number => |lhs| {
+                            switch (rhsBoxed) {
+                                .Bool, .Nil => self.runtimeError("Operands must be numbers."),
+                                .Number => |rhs| try self.push(Value{ .Bool = lhs > rhs }),
+                            }
+                        },
+                    }
+                },
+                .Less => {
+                    const rhsBoxed = self.pop();
+                    const lhsBoxed = self.pop();
+                    switch (lhsBoxed) {
+                        .Bool, .Nil => self.runtimeError("Operands must be numbers."),
+                        .Number => |lhs| {
+                            switch (rhsBoxed) {
+                                .Bool, .Nil => self.runtimeError("Operands must be numbers."),
+                                .Number => |rhs| try self.push(Value{ .Bool = lhs < rhs }),
+                            }
+                        },
+                    }
+                },
                 .Negate => {
                     const boxed = self.pop();
                     switch (boxed) {

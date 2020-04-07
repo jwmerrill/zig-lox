@@ -12,6 +12,29 @@ pub const Value = union(enum) {
             .Number => false,
         };
     }
+
+    pub fn equals(aBoxed: Value, bBoxed: Value) bool {
+        return switch (aBoxed) {
+            .Bool => |a| {
+                return switch (bBoxed) {
+                    .Bool => |b| a == b,
+                    else => false,
+                };
+            },
+            .Nil => |a| {
+                return switch (bBoxed) {
+                    .Nil => true,
+                    else => false,
+                };
+            },
+            .Number => |a| {
+                return switch (bBoxed) {
+                    .Number => |b| a == b,
+                    else => false,
+                };
+            },
+        };
+    }
 };
 
 pub fn printValue(boxed: Value) void {
