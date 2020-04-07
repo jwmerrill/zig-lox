@@ -210,7 +210,8 @@ const Parser = struct {
             .Plus, .Semicolon, .Slash, .Star => {},
 
             // One or two character tokens.
-            .Bang, .BangEqual, .Equal, .EqualEqual, .Greater => {},
+            .Bang => return self.unary(),
+            .BangEqual, .Equal, .EqualEqual, .Greater => {},
             .GreaterEqual, .Less, .LessEqual => {},
 
             // Literals.
@@ -279,6 +280,7 @@ const Parser = struct {
 
         // Emit the operator instruction
         switch (operatorType) {
+            .Bang => try self.emitOp(.Not),
             .Minus => try self.emitOp(.Negate),
             else => self.err("Unexpected unary operator"), // unreachable
         }

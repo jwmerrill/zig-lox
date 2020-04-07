@@ -4,6 +4,14 @@ pub const Value = union(enum) {
     Bool: bool,
     Nil,
     Number: f64,
+
+    pub fn isFalsey(self: Value) bool {
+        return switch (self) {
+            .Bool => |x| !x,
+            .Nil => true,
+            .Number => false,
+        };
+    }
 };
 
 pub fn printValue(boxed: Value) void {

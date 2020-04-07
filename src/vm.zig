@@ -131,6 +131,7 @@ pub const VM = struct {
                         },
                     }
                 },
+                .Not => try self.push(Value{ .Bool = self.pop().isFalsey() }),
             }
         }
 

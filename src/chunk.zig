@@ -15,6 +15,7 @@ pub const OpCode = enum(u8) {
     Subtract,
     Multiply,
     Divide,
+    Not,
 };
 
 pub const Chunk = struct {
@@ -78,6 +79,7 @@ pub const Chunk = struct {
             .Subtract => self.simpleInstruction("OP_SUBTRACT", offset),
             .Multiply => self.simpleInstruction("OP_MULTIPLY", offset),
             .Divide => self.simpleInstruction("OP_DIVIDE", offset),
+            .Not => self.simpleInstruction("OP_NOT", offset),
         };
     }
 

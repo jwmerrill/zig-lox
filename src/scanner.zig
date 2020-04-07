@@ -132,7 +132,7 @@ pub const Scanner = struct {
 
     fn match(self: *Scanner, char: u8) bool {
         if (self.isAtEnd()) return false;
-        if (self.peek() == char) return false;
+        if (self.peek() != char) return false;
 
         self.current += 1;
 
