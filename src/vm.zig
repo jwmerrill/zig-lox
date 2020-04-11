@@ -14,6 +14,22 @@ pub const InterpretResult = enum {
     RuntimeError,
 };
 
+fn add(x: f64, y: f64) f64 {
+    return x + y;
+}
+
+fn sub(x: f64, y: f64) f64 {
+    return x - y;
+}
+
+fn mul(x: f64, y: f64) f64 {
+    return x * y;
+}
+
+fn div(x: f64, y: f64) f64 {
+    return x / y;
+}
+
 pub const VM = struct {
     allocator: *Allocator,
     chunk: *Chunk,
@@ -110,58 +126,10 @@ pub const VM = struct {
                         .Number => |value| try self.push(Value{ .Number = -value }),
                     }
                 },
-                .Add => {
-                    const rhsBoxed = self.pop();
-                    const lhsBoxed = self.pop();
-                    switch (lhsBoxed) {
-                        .Bool, .Nil => self.runtimeError("Operands must be numbers."),
-                        .Number => |lhs| {
-                            switch (rhsBoxed) {
-                                .Bool, .Nil => self.runtimeError("Operands must be numbers."),
-                                .Number => |rhs| try self.push(Value{ .Number = lhs + rhs }),
-                            }
-                        },
-                    }
-                },
-                .Subtract => {
-                    const rhsBoxed = self.pop();
-                    const lhsBoxed = self.pop();
-                    switch (lhsBoxed) {
-                        .Bool, .Nil => self.runtimeError("Operands must be numbers."),
-                        .Number => |lhs| {
-                            switch (rhsBoxed) {
-                                .Bool, .Nil => self.runtimeError("Operands must be numbers."),
-                                .Number => |rhs| try self.push(Value{ .Number = lhs - rhs }),
-                            }
-                        },
-                    }
-                },
-                .Multiply => {
-                    const rhsBoxed = self.pop();
-                    const lhsBoxed = self.pop();
-                    switch (lhsBoxed) {
-                        .Bool, .Nil => self.runtimeError("Operands must be numbers."),
-                        .Number => |lhs| {
-                            switch (rhsBoxed) {
-                                .Bool, .Nil => self.runtimeError("Operands must be numbers."),
-                                .Number => |rhs| try self.push(Value{ .Number = lhs * rhs }),
-                            }
-                        },
-                    }
-                },
-                .Divide => {
-                    const rhsBoxed = self.pop();
-                    const lhsBoxed = self.pop();
-                    switch (lhsBoxed) {
-                        .Bool, .Nil => self.runtimeError("Operands must be numbers."),
-                        .Number => |lhs| {
-                            switch (rhsBoxed) {
-                                .Bool, .Nil => self.runtimeError("Operands must be numbers."),
-                                .Number => |rhs| try self.push(Value{ .Number = lhs / rhs }),
-                            }
-                        },
-                    }
-                },
+                .Add => try self.binaryNumericOp(add),
+                .Subtract => try self.binaryNumericOp(sub),
+                .Multiply => try self.binaryNumericOp(mul),
+                .Divide => try self.binaryNumericOp(div),
                 .Not => try self.push(Value{ .Bool = self.pop().isFalsey() }),
             }
         }
@@ -170,6 +138,20 @@ pub const VM = struct {
         std.debug.assert(self.stack.len == 0);
 
         return out;
+    }
+
+    fn binaryNumericOp(self: *VM, comptime op: var) !void {
+        const rhsBoxed = self.pop();
+        const lhsBoxed = self.pop();
+        return switch (lhsBoxed) {
+            .Bool, .Nil => self.runtimeError("Operands must be numbers."),
+            .Number => |lhs| {
+                switch (rhsBoxed) {
+                    .Bool, .Nil => self.runtimeError("Operands must be numbers."),
+                    .Number => |rhs| try self.push(Value{ .Number = op(lhs, rhs) }),
+                }
+            },
+        };
     }
 
     fn readByte(self: *VM) u8 {
