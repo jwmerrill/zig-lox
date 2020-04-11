@@ -1,15 +1,18 @@
 const std = @import("std");
+const Obj = @import("./object.zig").Obj;
 
 pub const Value = union(enum) {
     Bool: bool,
     Nil,
     Number: f64,
+    Obj: *Obj,
 
     pub fn isFalsey(self: Value) bool {
         return switch (self) {
             .Bool => |x| !x,
             .Nil => true,
             .Number => false,
+            .Obj => false,
         };
     }
 
@@ -33,6 +36,17 @@ pub const Value = union(enum) {
                     else => false,
                 };
             },
+            .Obj => |a| {
+                return switch (bBoxed) {
+                    .Obj => |b| switch (a.data) {
+                        .String => |aStr| switch (b.data) {
+                            .String => |bStr| std.mem.eql(u8, aStr.bytes, bStr.bytes),
+                            else => false,
+                        },
+                    },
+                    else => false,
+                };
+            },
         };
     }
 };
@@ -42,5 +56,8 @@ pub fn printValue(boxed: Value) void {
         .Number => |value| std.debug.warn("{}", value),
         .Bool => |value| std.debug.warn("{}", value),
         .Nil => std.debug.warn("nil"),
+        .Obj => |obj| switch (obj.data) {
+            .String => |str| std.debug.warn("\"{}\"", str.bytes),
+        },
     }
 }

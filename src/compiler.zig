@@ -1,16 +1,21 @@
 const std = @import("std");
 const warn = std.debug.warn;
+const Allocator = std.mem.Allocator;
 const Scanner = @import("./scanner.zig").Scanner;
 const Token = @import("./scanner.zig").Token;
 const TokenType = @import("./scanner.zig").TokenType;
+const VM = @import("./vm.zig").VM;
 const Chunk = @import("./chunk.zig").Chunk;
 const OpCode = @import("./chunk.zig").OpCode;
 const Value = @import("./value.zig").Value;
+const Obj = @import("./object.zig").Obj;
+const ObjString = @import("./object.zig").ObjString;
 const verbose = @import("./debug.zig").verbose;
 
-pub fn compile(source: []const u8, chunk: *Chunk) !bool {
-    var scanner = Scanner.init(source);
-    var parser = Parser.init(&scanner, chunk);
+// Note, the compiler allocates objects as part of parsing that must be
+// freed by the caller.
+pub fn compile(vm: *VM, source: []const u8) !bool {
+    var parser = Parser.init(vm, source);
     parser.advance();
     try parser.expression();
     parser.consume(.Eof, "Expect end of expression.");
@@ -74,22 +79,26 @@ fn getPrecedence(tokenType: TokenType) Precedence {
 }
 
 const Parser = struct {
-    scanner: *Scanner,
-    chunk: *Chunk,
+    vm: *VM,
+    scanner: Scanner,
     current: Token,
     previous: Token,
     hadError: bool,
     panicMode: bool,
 
-    pub fn init(scanner: *Scanner, chunk: *Chunk) Parser {
+    pub fn init(vm: *VM, source: []const u8) Parser {
         return Parser{
-            .scanner = scanner,
-            .chunk = chunk,
+            .vm = vm,
+            .scanner = Scanner.init(source),
             .current = undefined,
             .previous = undefined,
             .hadError = false,
             .panicMode = false,
         };
+    }
+
+    pub fn currentChunk(self: *Parser) *Chunk {
+        return self.vm.chunk;
     }
 
     pub fn advance(self: *Parser) void {
@@ -148,11 +157,11 @@ const Parser = struct {
     }
 
     pub fn emitByte(self: *Parser, byte: u8) !void {
-        try self.chunk.write(byte, self.previous.line);
+        try self.currentChunk().write(byte, self.previous.line);
     }
 
     pub fn emitOp(self: *Parser, op: OpCode) !void {
-        try self.chunk.writeOp(op, self.previous.line);
+        try self.currentChunk().writeOp(op, self.previous.line);
     }
 
     pub fn emitUnaryOp(self: *Parser, op: OpCode, byte: u8) !void {
@@ -173,13 +182,13 @@ const Parser = struct {
 
         if (verbose) {
             if (!self.hadError) {
-                self.chunk.disassemble("code");
+                self.currentChunk().disassemble("code");
             }
         }
     }
 
     pub fn makeConstant(self: *Parser, value: Value) !u8 {
-        const constant = try self.chunk.addConstant(value);
+        const constant = try self.currentChunk().addConstant(value);
         if (constant > std.math.maxInt(u8)) {
             self.err("Too many constants in one chunk.");
             return 0;
@@ -221,7 +230,8 @@ const Parser = struct {
             .LessEqual, .Equal => {},
 
             // Literals.
-            .Identifier, .String => {},
+            .Identifier => {},
+            .String => return self.string(),
             .Number => return self.number(),
 
             // Keywords.
@@ -273,6 +283,13 @@ const Parser = struct {
             .False => try self.emitOp(.False),
             else => self.err("Unexpected literal"), // unreachable
         }
+    }
+
+    pub fn string(self: *Parser) !void {
+        const source = self.previous.lexeme[1..self.previous.lexeme.len-1];
+        const buffer = try self.vm.allocator.alloc(u8, source.len);
+        std.mem.copy(u8, buffer, source);
+        try self.emitConstant((try Obj.string(self.vm, buffer)).value());
     }
 
     pub fn grouping(self: *Parser) !void {

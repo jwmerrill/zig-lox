@@ -160,7 +160,6 @@ pub const Scanner = struct {
     }
 
     fn scanString(self: *Scanner) Token {
-        // TODO, what about escaped double quotes?
         while (self.peek() != '"' and !self.isAtEnd()) {
             if (self.peek() == '\n') self.line += 1;
             self.advance();

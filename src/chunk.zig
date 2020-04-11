@@ -95,7 +95,6 @@ pub const Chunk = struct {
     }
 
     fn constantInstruction(self: *Chunk, name: []const u8, offset: usize) usize {
-        // TODO, make a constantInstruction command
         const constant = self.code.at(offset + 1);
         std.debug.warn("{} {} ", name, constant);
         printValue(self.constants.at(constant));

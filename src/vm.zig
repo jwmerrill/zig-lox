@@ -7,6 +7,8 @@ const Value = @import("./value.zig").Value;
 const printValue = @import("./value.zig").printValue;
 const compile = @import("./compiler.zig").compile;
 const verbose = @import("./debug.zig").verbose;
+const Obj = @import("./object.zig").Obj;
+const ObjString = @import("./object.zig").ObjString;
 
 pub const InterpretResult = enum {
     Ok,
@@ -35,6 +37,7 @@ pub const VM = struct {
     chunk: *Chunk,
     ip: usize, // NOTE, book uses a byte pointer for this
     stack: ArrayList(Value), // NOTE, book uses a fixed size stack
+    objects: ?*Obj,
 
     pub fn init(allocator: *Allocator) VM {
         return VM{
@@ -42,22 +45,33 @@ pub const VM = struct {
             .chunk = undefined,
             .ip = undefined,
             .stack = std.ArrayList(Value).init(allocator),
+            .objects = null,
         };
     }
 
     pub fn deinit(self: *VM) void {
+        self.freeObjects();
         self.stack.deinit();
+    }
+
+    pub fn freeObjects(self: *VM) void {
+        var object = self.objects;
+        while (object) |o| {
+            const next = o.next;
+            o.destroy(self);
+            object = next;
+        }
     }
 
     pub fn interpret(self: *VM, source: []const u8) !InterpretResult {
         var chunk = Chunk.init(self.allocator);
         defer chunk.deinit();
 
-        const success = try compile(source, &chunk);
-        if (!success) return .CompileError;
-
         self.chunk = &chunk;
         self.ip = 0;
+
+        const success = try compile(self, source);
+        if (!success) return .CompileError;
 
         return try self.run();
     }
@@ -97,12 +111,10 @@ pub const VM = struct {
                     const rhsBoxed = self.pop();
                     const lhsBoxed = self.pop();
                     switch (lhsBoxed) {
-                        .Bool, .Nil => self.runtimeError("Operands must be numbers."),
-                        .Number => |lhs| {
-                            switch (rhsBoxed) {
-                                .Bool, .Nil => self.runtimeError("Operands must be numbers."),
-                                .Number => |rhs| try self.push(Value{ .Bool = lhs > rhs }),
-                            }
+                        .Bool, .Nil, .Obj => self.runtimeError("Operands must be numbers."),
+                        .Number => |lhs| switch (rhsBoxed) {
+                            .Bool, .Nil, .Obj => self.runtimeError("Operands must be numbers."),
+                            .Number => |rhs| try self.push(Value{ .Bool = lhs > rhs }),
                         },
                     }
                 },
@@ -110,23 +122,35 @@ pub const VM = struct {
                     const rhsBoxed = self.pop();
                     const lhsBoxed = self.pop();
                     switch (lhsBoxed) {
-                        .Bool, .Nil => self.runtimeError("Operands must be numbers."),
-                        .Number => |lhs| {
-                            switch (rhsBoxed) {
-                                .Bool, .Nil => self.runtimeError("Operands must be numbers."),
-                                .Number => |rhs| try self.push(Value{ .Bool = lhs < rhs }),
-                            }
+                        .Bool, .Nil, .Obj => self.runtimeError("Operands must be numbers."),
+                        .Number => |lhs| switch (rhsBoxed) {
+                            .Bool, .Nil, .Obj => self.runtimeError("Operands must be numbers."),
+                            .Number => |rhs| try self.push(Value{ .Bool = lhs < rhs }),
                         },
                     }
                 },
                 .Negate => {
                     const boxed = self.pop();
                     switch (boxed) {
-                        .Bool, .Nil => self.runtimeError("Operand must be a number."),
+                        .Bool, .Nil, .Obj => self.runtimeError("Operand must be a number."),
                         .Number => |value| try self.push(Value{ .Number = -value }),
                     }
                 },
-                .Add => try self.binaryNumericOp(add),
+                .Add => {
+                    const rhsBoxed = self.pop();
+                    const lhsBoxed = self.pop();
+                    switch (lhsBoxed) {
+                        .Bool, .Nil => self.runtimeError("Operands must be numbers or strings."),
+                        .Obj => |lhs| switch (rhsBoxed) {
+                            .Bool, .Nil, .Number => self.runtimeError("Operands must be numbers or strings."),
+                            .Obj => |rhs| try self.concatenate(lhs, rhs),
+                        },
+                        .Number => |lhs| switch (rhsBoxed) {
+                            .Bool, .Nil, .Obj => self.runtimeError("Operands must be numbers or strings."),
+                            .Number => |rhs| try self.push(Value{ .Number = lhs + rhs }),
+                        },
+                    }
+                },
                 .Subtract => try self.binaryNumericOp(sub),
                 .Multiply => try self.binaryNumericOp(mul),
                 .Divide => try self.binaryNumericOp(div),
@@ -143,15 +167,26 @@ pub const VM = struct {
     fn binaryNumericOp(self: *VM, comptime op: var) !void {
         const rhsBoxed = self.pop();
         const lhsBoxed = self.pop();
-        return switch (lhsBoxed) {
-            .Bool, .Nil => self.runtimeError("Operands must be numbers."),
-            .Number => |lhs| {
-                switch (rhsBoxed) {
-                    .Bool, .Nil => self.runtimeError("Operands must be numbers."),
-                    .Number => |rhs| try self.push(Value{ .Number = op(lhs, rhs) }),
-                }
+        switch (lhsBoxed) {
+            .Bool, .Nil, .Obj => self.runtimeError("Operands must be numbers."),
+            .Number => |lhs| switch (rhsBoxed) {
+                .Bool, .Nil, .Obj => self.runtimeError("Operands must be numbers."),
+                .Number => |rhs| try self.push(Value{ .Number = op(lhs, rhs) }),
             },
-        };
+        }
+    }
+
+    fn concatenate(self: *VM, lhs: *Obj, rhs: *Obj) !void {
+        switch (lhs.data) {
+            .String => |lhsStr| switch (rhs.data) {
+                .String => |rhsStr| {
+                    const buffer = try self.allocator.alloc(u8, lhsStr.bytes.len + rhsStr.bytes.len);
+                    std.mem.copy(u8, buffer[0..lhsStr.bytes.len], lhsStr.bytes);
+                    std.mem.copy(u8, buffer[lhsStr.bytes.len..], rhsStr.bytes);
+                    try self.push((try Obj.string(self, buffer)).value());
+                },
+            },
+        }
     }
 
     fn readByte(self: *VM) u8 {
