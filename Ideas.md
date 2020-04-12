@@ -18,3 +18,8 @@
 - Currently using ?*Obj for "next" pointer in objects. Could probably save space by representing the end of the list with a pointer that points back to the current object instead of using an optional here.
 - Interesting that lox chooses not to implement any escapes in strings
 - How should we handle OutOfMemory?
+- Could make our hash table generic for not much more effort. But could also just use the standard library hash map, which is already generic.
+- Why doesn't hash table get function just return the value it finds?
+- Would probably be more efficient to use Zig's standard library hash map to implement string interning, since there is only one possible value, and Zig knows how to optimize that case.
+- Choosing not to implement copyString for now--it's really a performance optimization on top of takeString. May benchmark at the "optimization" phase to decide if this is worth it.
+- Using *ObjString as the key for our hash table is a little tricky. You have to put an ObjString inside an Obj to get a valid pointer, but an Obj can also hold other kinds of data. Initially got tripped up by passing a pointer to a local variable bound to an ObjString.

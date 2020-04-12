@@ -9,6 +9,7 @@ const compile = @import("./compiler.zig").compile;
 const verbose = @import("./debug.zig").verbose;
 const Obj = @import("./object.zig").Obj;
 const ObjString = @import("./object.zig").ObjString;
+const Table = @import("./table.zig").Table;
 
 fn add(x: f64, y: f64) f64 {
     return x + y;
@@ -32,6 +33,7 @@ pub const VM = struct {
     ip: usize, // NOTE, book uses a byte pointer for this
     stack: ArrayList(Value), // NOTE, book uses a fixed size stack
     objects: ?*Obj,
+    strings: Table,
 
     pub fn init(allocator: *Allocator) VM {
         return VM{
@@ -40,11 +42,13 @@ pub const VM = struct {
             .ip = undefined,
             .stack = std.ArrayList(Value).init(allocator),
             .objects = null,
+            .strings = Table.init(allocator)
         };
     }
 
     pub fn deinit(self: *VM) void {
         self.freeObjects();
+        self.strings.deinit();
         self.stack.deinit();
     }
 
@@ -101,7 +105,7 @@ pub const VM = struct {
                 const value = self.chunk.constants.at(constant);
                 try self.push(value);
             },
-            .Nil => try self.push(Value{ .Nil = undefined }),
+            .Nil => try self.push(Value.Nil),
             .True => try self.push(Value{ .Bool = true }),
             .False => try self.push(Value{ .Bool = false }),
             .Equal => {

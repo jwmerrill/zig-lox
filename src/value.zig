@@ -38,12 +38,7 @@ pub const Value = union(enum) {
             },
             .Obj => |a| {
                 return switch (bBoxed) {
-                    .Obj => |b| switch (a.data) {
-                        .String => |aStr| switch (b.data) {
-                            .String => |bStr| std.mem.eql(u8, aStr.bytes, bStr.bytes),
-                            else => false,
-                        },
-                    },
+                    .Obj => |b| a == b,
                     else => false,
                 };
             },

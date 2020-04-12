@@ -293,7 +293,8 @@ const Parser = struct {
         const source = self.previous.lexeme[1 .. self.previous.lexeme.len - 1];
         const buffer = try self.vm.allocator.alloc(u8, source.len);
         std.mem.copy(u8, buffer, source);
-        try self.emitConstant((try Obj.string(self.vm, buffer)).value());
+        const obj = try Obj.string(self.vm, buffer);
+        try self.emitConstant(obj.value());
     }
 
     pub fn grouping(self: *Parser) !void {
