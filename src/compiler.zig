@@ -49,8 +49,6 @@ const Precedence = enum(u8) {
 const CompilerErrors = error{
 // Can happen when we try to emit bytecode or constants
     OutOfMemory,
-    // Can happen when we try to parse floats
-    InvalidCharacter,
 };
 
 fn getPrecedence(tokenType: TokenType) Precedence {
@@ -272,8 +270,14 @@ const Parser = struct {
     }
 
     pub fn number(self: *Parser) !void {
-        const value = try std.fmt.parseFloat(f64, self.previous.lexeme);
-        try self.emitConstant(Value{ .Number = value });
+        if (std.fmt.parseFloat(f64, self.previous.lexeme)) |value| {
+            try self.emitConstant(Value{ .Number = value });
+        } else |e| switch (e) {
+            error.InvalidCharacter => {
+                self.err("Could not parse number");
+                return;
+            }
+        }
     }
 
     pub fn literal(self: *Parser) !void {
@@ -286,7 +290,7 @@ const Parser = struct {
     }
 
     pub fn string(self: *Parser) !void {
-        const source = self.previous.lexeme[1..self.previous.lexeme.len-1];
+        const source = self.previous.lexeme[1 .. self.previous.lexeme.len - 1];
         const buffer = try self.vm.allocator.alloc(u8, source.len);
         std.mem.copy(u8, buffer, source);
         try self.emitConstant((try Obj.string(self.vm, buffer)).value());
