@@ -10,12 +10,6 @@ const verbose = @import("./debug.zig").verbose;
 const Obj = @import("./object.zig").Obj;
 const ObjString = @import("./object.zig").ObjString;
 
-pub const InterpretResult = enum {
-    Ok,
-    CompileError,
-    RuntimeError,
-};
-
 fn add(x: f64, y: f64) f64 {
     return x + y;
 }
@@ -63,21 +57,25 @@ pub const VM = struct {
         }
     }
 
-    pub fn interpret(self: *VM, source: []const u8) !InterpretResult {
+    pub fn interpret(self: *VM, source: []const u8) !void {
+        // Stack should be empty when we start and when we finish
+        // running
+        std.debug.assert(self.stack.len == 0);
+        defer std.debug.assert(self.stack.len == 0);
+
         var chunk = Chunk.init(self.allocator);
         defer chunk.deinit();
 
         self.chunk = &chunk;
         self.ip = 0;
 
-        const success = try compile(self, source);
-        if (!success) return .CompileError;
-
-        return try self.run();
+        try compile(self, source);
+        try self.run();
     }
 
-    fn run(self: *VM) !InterpretResult {
-        var out = InterpretResult.RuntimeError;
+    fn run(self: *VM) !void {
+        errdefer self.resetStack();
+
         while (true) {
             if (verbose) {
                 // Print debugging information
@@ -91,7 +89,6 @@ pub const VM = struct {
                 .Return => {
                     printValue(self.pop());
                     std.debug.warn("\n");
-                    out = InterpretResult.Ok;
                     break;
                 },
                 .Constant => {
@@ -111,9 +108,9 @@ pub const VM = struct {
                     const rhsBoxed = self.pop();
                     const lhsBoxed = self.pop();
                     switch (lhsBoxed) {
-                        .Bool, .Nil, .Obj => self.runtimeError("Operands must be numbers."),
+                        .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers."),
                         .Number => |lhs| switch (rhsBoxed) {
-                            .Bool, .Nil, .Obj => self.runtimeError("Operands must be numbers."),
+                            .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers."),
                             .Number => |rhs| try self.push(Value{ .Bool = lhs > rhs }),
                         },
                     }
@@ -122,9 +119,9 @@ pub const VM = struct {
                     const rhsBoxed = self.pop();
                     const lhsBoxed = self.pop();
                     switch (lhsBoxed) {
-                        .Bool, .Nil, .Obj => self.runtimeError("Operands must be numbers."),
+                        .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers."),
                         .Number => |lhs| switch (rhsBoxed) {
-                            .Bool, .Nil, .Obj => self.runtimeError("Operands must be numbers."),
+                            .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers."),
                             .Number => |rhs| try self.push(Value{ .Bool = lhs < rhs }),
                         },
                     }
@@ -132,7 +129,7 @@ pub const VM = struct {
                 .Negate => {
                     const boxed = self.pop();
                     switch (boxed) {
-                        .Bool, .Nil, .Obj => self.runtimeError("Operand must be a number."),
+                        .Bool, .Nil, .Obj => return self.runtimeError("Operand must be a number."),
                         .Number => |value| try self.push(Value{ .Number = -value }),
                     }
                 },
@@ -140,13 +137,13 @@ pub const VM = struct {
                     const rhsBoxed = self.pop();
                     const lhsBoxed = self.pop();
                     switch (lhsBoxed) {
-                        .Bool, .Nil => self.runtimeError("Operands must be numbers or strings."),
+                        .Bool, .Nil => return self.runtimeError("Operands must be numbers or strings."),
                         .Obj => |lhs| switch (rhsBoxed) {
-                            .Bool, .Nil, .Number => self.runtimeError("Operands must be numbers or strings."),
+                            .Bool, .Nil, .Number => return self.runtimeError("Operands must be numbers or strings."),
                             .Obj => |rhs| try self.concatenate(lhs, rhs),
                         },
                         .Number => |lhs| switch (rhsBoxed) {
-                            .Bool, .Nil, .Obj => self.runtimeError("Operands must be numbers or strings."),
+                            .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers or strings."),
                             .Number => |rhs| try self.push(Value{ .Number = lhs + rhs }),
                         },
                     }
@@ -157,20 +154,15 @@ pub const VM = struct {
                 .Not => try self.push(Value{ .Bool = self.pop().isFalsey() }),
             }
         }
-
-        // Stack should be empty when we finish running
-        std.debug.assert(self.stack.len == 0);
-
-        return out;
     }
 
     fn binaryNumericOp(self: *VM, comptime op: var) !void {
         const rhsBoxed = self.pop();
         const lhsBoxed = self.pop();
         switch (lhsBoxed) {
-            .Bool, .Nil, .Obj => self.runtimeError("Operands must be numbers."),
+            .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers."),
             .Number => |lhs| switch (rhsBoxed) {
-                .Bool, .Nil, .Obj => self.runtimeError("Operands must be numbers."),
+                .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers."),
                 .Number => |rhs| try self.push(Value{ .Number = op(lhs, rhs) }),
             },
         }
@@ -217,7 +209,7 @@ pub const VM = struct {
         std.debug.warn("\n");
     }
 
-    fn runtimeError(self: *VM, comptime message: []const u8) void {
+    fn runtimeError(self: *VM, comptime message: []const u8) !void {
         // TODO, allow passing extra parameters here. Need varargs now,
         // but they're going away in zig 0.6.
         const line = self.chunk.code.at(self.ip);
@@ -225,6 +217,6 @@ pub const VM = struct {
         std.debug.warn(message);
         std.debug.warn("\n[line {}] in script\n", line);
 
-        self.resetStack();
+        return error.RuntimeError;
     }
 };

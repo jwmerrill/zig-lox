@@ -14,14 +14,14 @@ const verbose = @import("./debug.zig").verbose;
 
 // Note, the compiler allocates objects as part of parsing that must be
 // freed by the caller.
-pub fn compile(vm: *VM, source: []const u8) !bool {
+pub fn compile(vm: *VM, source: []const u8) !void {
     var parser = Parser.init(vm, source);
     parser.advance();
     try parser.expression();
     parser.consume(.Eof, "Expect end of expression.");
     try parser.end();
 
-    return !parser.hadError;
+    if (parser.hadError) return error.CompileError;
 }
 
 const Precedence = enum(u8) {

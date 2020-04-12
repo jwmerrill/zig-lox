@@ -17,3 +17,4 @@
 - Who "owns" the memory that holds string values created by the parser? Seems natural for the VM to own this memory, since it will also be responsible for owning memory created at runtime.
 - Currently using ?*Obj for "next" pointer in objects. Could probably save space by representing the end of the list with a pointer that points back to the current object instead of using an optional here.
 - Interesting that lox chooses not to implement any escapes in strings
+- How should we handle OutOfMemory?

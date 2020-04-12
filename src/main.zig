@@ -29,7 +29,10 @@ fn repl(allocator: *Allocator) !void {
     while (true) {
         std.debug.warn("> ");
         const source = try std.io.readLineSlice(line[0..]);
-        const result = vm.interpret(source);
+        vm.interpret(source) catch |err| switch (err) {
+            error.CompileError, error.RuntimeError => {},
+            error.OutOfMemory => return err,
+        };
     }
 }
 
@@ -39,8 +42,9 @@ fn runFile(allocator: *Allocator, path: []const u8) !void {
 
     const source = try std.io.readFileAlloc(allocator, path);
     defer allocator.free(source);
-    const result = try vm.interpret(source);
-
-    if (result == .CompileError) process.exit(65);
-    if (result == .RuntimeError) process.exit(70);
+    vm.interpret(source) catch |err| switch (err) {
+        error.CompileError => process.exit(65),
+        error.RuntimeError => process.exit(70),
+        error.OutOfMemory => return err,
+    };
 }
