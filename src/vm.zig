@@ -84,75 +84,79 @@ pub const VM = struct {
             }
 
             const instruction = self.readByte();
+            const opCode = @intToEnum(OpCode, instruction);
+            try self.runOp(opCode);
+            if (opCode == .Return) break;
+        }
+    }
 
-            switch (@intToEnum(OpCode, instruction)) {
-                .Return => {
-                    printValue(self.pop());
-                    std.debug.warn("\n");
-                    break;
-                },
-                .Constant => {
-                    const constant = self.readByte();
-                    const value = self.chunk.constants.at(constant);
-                    try self.push(value);
-                },
-                .Nil => try self.push(Value{ .Nil = undefined }),
-                .True => try self.push(Value{ .Bool = true }),
-                .False => try self.push(Value{ .Bool = false }),
-                .Equal => {
-                    const b = self.pop();
-                    const a = self.pop();
-                    try self.push(Value{ .Bool = a.equals(b) });
-                },
-                .Greater => {
-                    const rhsBoxed = self.pop();
-                    const lhsBoxed = self.pop();
-                    switch (lhsBoxed) {
+    fn runOp(self: *VM, opCode: OpCode) !void {
+        switch (opCode) {
+            .Return => {
+                printValue(self.pop());
+                std.debug.warn("\n");
+            },
+            .Constant => {
+                const constant = self.readByte();
+                const value = self.chunk.constants.at(constant);
+                try self.push(value);
+            },
+            .Nil => try self.push(Value{ .Nil = undefined }),
+            .True => try self.push(Value{ .Bool = true }),
+            .False => try self.push(Value{ .Bool = false }),
+            .Equal => {
+                const b = self.pop();
+                const a = self.pop();
+                try self.push(Value{ .Bool = a.equals(b) });
+            },
+            .Greater => {
+                const rhsBoxed = self.pop();
+                const lhsBoxed = self.pop();
+                switch (lhsBoxed) {
+                    .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers."),
+                    .Number => |lhs| switch (rhsBoxed) {
                         .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers."),
-                        .Number => |lhs| switch (rhsBoxed) {
-                            .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers."),
-                            .Number => |rhs| try self.push(Value{ .Bool = lhs > rhs }),
-                        },
-                    }
-                },
-                .Less => {
-                    const rhsBoxed = self.pop();
-                    const lhsBoxed = self.pop();
-                    switch (lhsBoxed) {
+                        .Number => |rhs| try self.push(Value{ .Bool = lhs > rhs }),
+                    },
+                }
+            },
+            .Less => {
+                const rhsBoxed = self.pop();
+                const lhsBoxed = self.pop();
+                switch (lhsBoxed) {
+                    .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers."),
+                    .Number => |lhs| switch (rhsBoxed) {
                         .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers."),
-                        .Number => |lhs| switch (rhsBoxed) {
-                            .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers."),
-                            .Number => |rhs| try self.push(Value{ .Bool = lhs < rhs }),
-                        },
-                    }
-                },
-                .Negate => {
-                    const boxed = self.pop();
-                    switch (boxed) {
-                        .Bool, .Nil, .Obj => return self.runtimeError("Operand must be a number."),
-                        .Number => |value| try self.push(Value{ .Number = -value }),
-                    }
-                },
-                .Add => {
-                    const rhsBoxed = self.pop();
-                    const lhsBoxed = self.pop();
-                    switch (lhsBoxed) {
-                        .Bool, .Nil => return self.runtimeError("Operands must be numbers or strings."),
-                        .Obj => |lhs| switch (rhsBoxed) {
-                            .Bool, .Nil, .Number => return self.runtimeError("Operands must be numbers or strings."),
-                            .Obj => |rhs| try self.concatenate(lhs, rhs),
-                        },
-                        .Number => |lhs| switch (rhsBoxed) {
-                            .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers or strings."),
-                            .Number => |rhs| try self.push(Value{ .Number = lhs + rhs }),
-                        },
-                    }
-                },
-                .Subtract => try self.binaryNumericOp(sub),
-                .Multiply => try self.binaryNumericOp(mul),
-                .Divide => try self.binaryNumericOp(div),
-                .Not => try self.push(Value{ .Bool = self.pop().isFalsey() }),
-            }
+                        .Number => |rhs| try self.push(Value{ .Bool = lhs < rhs }),
+                    },
+                }
+            },
+            .Negate => {
+                const boxed = self.pop();
+                switch (boxed) {
+                    .Bool, .Nil, .Obj => return self.runtimeError("Operand must be a number."),
+                    .Number => |value| try self.push(Value{ .Number = -value }),
+                }
+            },
+            .Add => {
+                const rhsBoxed = self.pop();
+                const lhsBoxed = self.pop();
+                switch (lhsBoxed) {
+                    .Bool, .Nil => return self.runtimeError("Operands must be numbers or strings."),
+                    .Obj => |lhs| switch (rhsBoxed) {
+                        .Bool, .Nil, .Number => return self.runtimeError("Operands must be numbers or strings."),
+                        .Obj => |rhs| try self.concatenate(lhs, rhs),
+                    },
+                    .Number => |lhs| switch (rhsBoxed) {
+                        .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers or strings."),
+                        .Number => |rhs| try self.push(Value{ .Number = lhs + rhs }),
+                    },
+                }
+            },
+            .Subtract => try self.binaryNumericOp(sub),
+            .Multiply => try self.binaryNumericOp(mul),
+            .Divide => try self.binaryNumericOp(div),
+            .Not => try self.push(Value{ .Bool = self.pop().isFalsey() }),
         }
     }
 
