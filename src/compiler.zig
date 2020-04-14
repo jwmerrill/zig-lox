@@ -48,8 +48,7 @@ const Precedence = enum(u8) {
 // See https://github.com/ziglang/zig/issues/2971
 const CompilerErrors = error{
 // Can happen when we try to emit bytecode or constants
-    OutOfMemory,
-};
+OutOfMemory};
 
 fn getPrecedence(tokenType: TokenType) Precedence {
     return switch (tokenType) {
@@ -137,19 +136,19 @@ const Parser = struct {
         if (self.panicMode) return;
         self.panicMode = true;
 
-        warn("[line {}] Error", token.line);
+        warn("[line {}] Error", .{token.line});
 
         switch (token.tokenType) {
             .Eof => {
-                warn(" at end");
+                warn(" at end", .{});
             },
             .Error => {},
             else => {
-                warn(" at '{}'", token.lexeme);
+                warn(" at '{}'", .{token.lexeme});
             },
         }
 
-        warn(": {}\n", message);
+        warn(": {}\n", .{message});
 
         self.hadError = true;
     }
@@ -276,7 +275,7 @@ const Parser = struct {
             error.InvalidCharacter => {
                 self.err("Could not parse number");
                 return;
-            }
+            },
         }
     }
 

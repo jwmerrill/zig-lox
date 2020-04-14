@@ -12,7 +12,7 @@ pub const Table = struct {
     pub fn init(allocator: *Allocator) Table {
         return Table{
             .allocator = allocator,
-            .entries = [_]Entry{},
+            .entries = &[_]Entry{},
             .count = 0,
         };
     }

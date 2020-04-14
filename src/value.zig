@@ -48,11 +48,11 @@ pub const Value = union(enum) {
 
 pub fn printValue(boxed: Value) void {
     switch (boxed) {
-        .Number => |value| std.debug.warn("{}", value),
-        .Bool => |value| std.debug.warn("{}", value),
-        .Nil => std.debug.warn("nil"),
+        .Number => |value| std.debug.warn("{}", .{value}),
+        .Bool => |value| std.debug.warn("{}", .{value}),
+        .Nil => std.debug.warn("nil", .{}),
         .Obj => |obj| switch (obj.data) {
-            .String => |str| std.debug.warn("\"{}\"", str.bytes),
+            .String => |str| std.debug.warn("\"{}\"", .{str.bytes}),
         },
     }
 }

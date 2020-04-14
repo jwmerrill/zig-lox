@@ -42,7 +42,7 @@ pub const VM = struct {
             .ip = undefined,
             .stack = std.ArrayList(Value).init(allocator),
             .objects = null,
-            .strings = Table.init(allocator)
+            .strings = Table.init(allocator),
         };
     }
 
@@ -64,8 +64,8 @@ pub const VM = struct {
     pub fn interpret(self: *VM, source: []const u8) !void {
         // Stack should be empty when we start and when we finish
         // running
-        std.debug.assert(self.stack.len == 0);
-        defer std.debug.assert(self.stack.len == 0);
+        std.debug.assert(self.stack.items.len == 0);
+        defer std.debug.assert(self.stack.items.len == 0);
 
         var chunk = Chunk.init(self.allocator);
         defer chunk.deinit();
@@ -98,11 +98,11 @@ pub const VM = struct {
         switch (opCode) {
             .Return => {
                 printValue(self.pop());
-                std.debug.warn("\n");
+                std.debug.warn("\n", .{});
             },
             .Constant => {
                 const constant = self.readByte();
-                const value = self.chunk.constants.at(constant);
+                const value = self.chunk.constants.items[constant];
                 try self.push(value);
             },
             .Nil => try self.push(Value.Nil),
@@ -190,7 +190,7 @@ pub const VM = struct {
     }
 
     fn readByte(self: *VM) u8 {
-        const byte = self.chunk.code.at(self.ip);
+        const byte = self.chunk.code.items[self.ip];
         self.ip += 1;
         return byte;
     }
@@ -208,22 +208,22 @@ pub const VM = struct {
     }
 
     fn printStack(self: *VM) void {
-        std.debug.warn("          ");
-        for (self.stack.toSlice()) |value| {
-            std.debug.warn("[ ");
+        std.debug.warn("          ", .{});
+        for (self.stack.items) |value| {
+            std.debug.warn("[ ", .{});
             printValue(value);
-            std.debug.warn(" ]");
+            std.debug.warn(" ]", .{});
         }
-        std.debug.warn("\n");
+        std.debug.warn("\n", .{});
     }
 
     fn runtimeError(self: *VM, comptime message: []const u8) !void {
         // TODO, allow passing extra parameters here. Need varargs now,
         // but they're going away in zig 0.6.
-        const line = self.chunk.code.at(self.ip);
+        const line = self.chunk.code.items[self.ip];
 
-        std.debug.warn(message);
-        std.debug.warn("\n[line {}] in script\n", line);
+        std.debug.warn(message, .{});
+        std.debug.warn("\n[line {}] in script\n", .{line});
 
         return error.RuntimeError;
     }

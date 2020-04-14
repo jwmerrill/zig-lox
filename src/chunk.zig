@@ -50,27 +50,27 @@ pub const Chunk = struct {
     }
 
     pub fn disassemble(self: *Chunk, name: []const u8) void {
-        std.debug.warn("== {} ==\n", name);
+        std.debug.warn("== {} ==\n", .{name});
 
         var i: usize = 0;
-        while (i < self.code.len) {
+        while (i < self.code.items.len) {
             i = self.disassembleInstruction(i);
         }
     }
 
     pub fn disassembleInstruction(self: *Chunk, offset: usize) usize {
         // Print offset
-        std.debug.warn("{:0>4} ", offset);
+        std.debug.warn("{:0>4} ", .{offset});
 
         // Print line
-        if (offset > 0 and self.lines.at(offset) == self.lines.at(offset - 1)) {
-            std.debug.warn("   | ");
+        if (offset > 0 and self.lines.items[offset] == self.lines.items[offset - 1]) {
+            std.debug.warn("   | ", .{});
         } else {
-            std.debug.warn("{: >4} ", self.lines.at(offset));
+            std.debug.warn("{: >4} ", .{self.lines.items[offset]});
         }
 
         // Print instruction
-        const instruction = @intToEnum(OpCode, self.code.at(offset));
+        const instruction = @intToEnum(OpCode, self.code.items[offset]);
         return switch (instruction) {
             .Return => self.simpleInstruction("OP_RETURN", offset),
             .Constant => self.constantInstruction("OP_CONSTANT", offset),
@@ -90,22 +90,20 @@ pub const Chunk = struct {
     }
 
     fn simpleInstruction(self: *Chunk, name: []const u8, offset: usize) usize {
-        std.debug.warn("{}\n", name);
+        std.debug.warn("{}\n", .{name});
         return offset + 1;
     }
 
     fn constantInstruction(self: *Chunk, name: []const u8, offset: usize) usize {
-        const constant = self.code.at(offset + 1);
-        std.debug.warn("{} {} ", name, constant);
-        printValue(self.constants.at(constant));
-        std.debug.warn("\n");
+        const constant = self.code.items[offset + 1];
+        std.debug.warn("{} {} ", .{name, constant});
+        printValue(self.constants.items[constant]);
+        std.debug.warn("\n", .{});
         return offset + 2;
     }
 
     pub fn addConstant(self: *Chunk, value: Value) !u8 {
-        // Note, this will have to change to self.constants.items.len in
-        // zig 0.6
-        const index = @intCast(u8, self.constants.len);
+        const index = @intCast(u8, self.constants.items.len);
         try self.constants.append(value);
         return index;
     }
