@@ -44,28 +44,24 @@ pub const Table = struct {
     pub fn get(self: *Table, key: *ObjString, value: *Value) bool {
         if (self.entries.len == 0) return false;
 
-        const entry = self.findEntry(key);
+        const entry = findEntry(self.entries, key);
 
-        if (entry.key) {
-            value.* = entry.value;
-            return true;
-        } else {
-            return false;
-        }
+        if (entry.key == null) return false;
+
+        value.* = entry.value;
+        return true;
     }
 
     pub fn delete(self: *Table, key: *ObjString) bool {
         if (self.entries.len == 0) return false;
 
-        var entry = self.findEntry(key);
-        if (entry.key) {
-            // "Tombstone" represented by empty key and true value
-            entry.key = null;
-            entry.value = Value{ .Bool = true };
-            return true;
-        } else {
-            return false;
-        }
+        var entry = findEntry(self.entries, key);
+        if (entry.key == null) return false;
+
+        // Add "tombstone" represented by empty key and true value
+        entry.key = null;
+        entry.value = Value{ .Bool = true };
+        return true;
     }
 
     pub fn increaseCapacity(self: *Table) !void {

@@ -6,6 +6,11 @@ const printValue = @import("./value.zig").printValue;
 
 pub const OpCode = enum(u8) {
     Return,
+    Pop,
+    GetGlobal,
+    DefineGlobal,
+    SetGlobal,
+    Print,
     Constant,
     Nil,
     True,
@@ -73,6 +78,11 @@ pub const Chunk = struct {
         const instruction = @intToEnum(OpCode, self.code.items[offset]);
         return switch (instruction) {
             .Return => self.simpleInstruction("OP_RETURN", offset),
+            .Pop => self.simpleInstruction("OP_POP", offset),
+            .GetGlobal => self.constantInstruction("OP_GET_GLOBAL", offset),
+            .DefineGlobal => self.constantInstruction("OP_DEFINE_GLOBAL", offset),
+            .SetGlobal => self.constantInstruction("OP_SET_GLOBAL", offset),
+            .Print => self.simpleInstruction("OP_PRINT", offset),
             .Constant => self.constantInstruction("OP_CONSTANT", offset),
             .Nil => self.simpleInstruction("OP_NIL", offset),
             .True => self.simpleInstruction("OP_TRUE", offset),
@@ -96,7 +106,7 @@ pub const Chunk = struct {
 
     fn constantInstruction(self: *Chunk, name: []const u8, offset: usize) usize {
         const constant = self.code.items[offset + 1];
-        std.debug.warn("{} {} ", .{name, constant});
+        std.debug.warn("{} {} ", .{ name, constant });
         printValue(self.constants.items[constant]);
         std.debug.warn("\n", .{});
         return offset + 2;

@@ -17,7 +17,9 @@ const verbose = @import("./debug.zig").verbose;
 pub fn compile(vm: *VM, source: []const u8) !void {
     var parser = Parser.init(vm, source);
     parser.advance();
-    try parser.expression();
+    while (!parser.match(.Eof)) {
+        try parser.declaration();
+    }
     parser.consume(.Eof, "Expect end of expression.");
     try parser.end();
 
@@ -103,17 +105,27 @@ const Parser = struct {
 
         while (true) {
             self.current = self.scanner.scanToken();
-            if (self.current.tokenType != .Error) break;
+            if (!self.check(.Error)) break;
             self.errorAtCurrent(self.current.lexeme);
         }
     }
 
+    pub fn check(self: *Parser, tokenType: TokenType) bool {
+        return self.current.tokenType == tokenType;
+    }
+
     pub fn consume(self: *Parser, tokenType: TokenType, message: []const u8) void {
-        if (self.current.tokenType == tokenType) {
+        if (self.check(tokenType)) {
             self.advance();
         } else {
             self.errorAtCurrent(message);
         }
+    }
+
+    pub fn match(self: *Parser, tokenType: TokenType) bool {
+        if (!self.check(tokenType)) return false;
+        self.advance();
+        return true;
     }
 
     pub fn errorAtCurrent(self: *Parser, message: []const u8) void {
@@ -194,21 +206,96 @@ const Parser = struct {
         return @intCast(u8, constant);
     }
 
+    pub fn declaration(self: *Parser) CompilerErrors!void {
+        if (self.match(.Var)) {
+            try self.varDeclaration();
+        } else {
+            try self.statement();
+        }
+
+        if (self.panicMode) self.synchronize();
+    }
+
+    pub fn statement(self: *Parser) CompilerErrors!void {
+        if (self.match(.Print)) {
+            try self.printStatement();
+        } else {
+            try self.expressionStatement();
+        }
+    }
+
     pub fn expression(self: *Parser) CompilerErrors!void {
         try self.parsePrecedence(.Assignment);
     }
 
-    pub fn parsePrecedence(self: *Parser, precedence: Precedence) CompilerErrors!void {
-        self.advance();
-        try self.prefix(self.previous.tokenType);
+    pub fn varDeclaration(self: *Parser) CompilerErrors!void {
+        const global: u8 = try self.parseVariable("Expect variable name");
 
-        while (@enumToInt(precedence) <= @enumToInt(getPrecedence(self.current.tokenType))) {
-            self.advance();
-            try self.infix(self.previous.tokenType);
+        if (self.match(.Equal)) {
+            try self.expression();
+        } else {
+            try self.emitOp(.Nil);
+        }
+        self.consume(.Semicolon, "Expect ';' after variable declaration.");
+
+        try self.defineVariable(global);
+    }
+
+    pub fn printStatement(self: *Parser) CompilerErrors!void {
+        try self.expression();
+        self.consume(.Semicolon, "Expect ';' after value.");
+        try self.emitOp(.Print);
+    }
+
+    pub fn expressionStatement(self: *Parser) CompilerErrors!void {
+        try self.expression();
+        self.consume(.Semicolon, "Expect ';' after value.");
+        try self.emitOp(.Pop);
+    }
+
+    pub fn synchronize(self: *Parser) void {
+        self.panicMode = false;
+
+        while (!self.check(.Eof)) {
+            if (self.previous.tokenType == .Semicolon) return;
+
+            switch (self.current.tokenType) {
+                .Class, .Fun, .Var, .For, .If, .While, .Print, .Return => return,
+                else => self.advance(),
+            }
         }
     }
 
-    pub fn prefix(self: *Parser, tokenType: TokenType) !void {
+    pub fn parsePrecedence(self: *Parser, precedence: Precedence) CompilerErrors!void {
+        self.advance();
+
+        const canAssign = @enumToInt(precedence) <= @enumToInt(Precedence.Assignment);
+        try self.prefix(self.previous.tokenType, canAssign);
+
+        while (@enumToInt(precedence) <= @enumToInt(getPrecedence(self.current.tokenType))) {
+            self.advance();
+            try self.infix(self.previous.tokenType, canAssign);
+        }
+
+        if (canAssign and self.match(.Equal)) {
+            self.err("Invalid assignment target.");
+        }
+    }
+
+    pub fn parseVariable(self: *Parser, message: []const u8) !u8 {
+        self.consume(.Identifier, message);
+        return try self.identifierConstant(self.previous.lexeme);
+    }
+
+    pub fn defineVariable(self: *Parser, global: u8) !void {
+        try self.emitUnaryOp(.DefineGlobal, global);
+    }
+
+    pub fn identifierConstant(self: *Parser, name: []const u8) !u8 {
+        return try self.makeConstant(try self.stringValue(name));
+    }
+
+    pub fn prefix(self: *Parser, tokenType: TokenType, canAssign: bool) !void {
         switch (tokenType) {
             // Single-character tokens.
             .LeftParen => return self.grouping(),
@@ -227,7 +314,7 @@ const Parser = struct {
             .LessEqual, .Equal => {},
 
             // Literals.
-            .Identifier => {},
+            .Identifier => return self.variable(canAssign),
             .String => return self.string(),
             .Number => return self.number(),
 
@@ -241,7 +328,7 @@ const Parser = struct {
         self.prefixError();
     }
 
-    pub fn infix(self: *Parser, tokenType: TokenType) !void {
+    pub fn infix(self: *Parser, tokenType: TokenType, canAssign: bool) !void {
         switch (tokenType) {
             // Single-character tokens.
             .LeftParen, .RightParen, .LeftBrace, .RightBrace, .Comma => {},
@@ -288,12 +375,31 @@ const Parser = struct {
         }
     }
 
-    pub fn string(self: *Parser) !void {
-        const source = self.previous.lexeme[1 .. self.previous.lexeme.len - 1];
+    pub fn stringValue(self: *Parser, source: []const u8) !Value {
         const buffer = try self.vm.allocator.alloc(u8, source.len);
         std.mem.copy(u8, buffer, source);
         const obj = try Obj.string(self.vm, buffer);
-        try self.emitConstant(obj.value());
+        return obj.value();
+    }
+
+    pub fn string(self: *Parser) !void {
+        const source = self.previous.lexeme[1 .. self.previous.lexeme.len - 1];
+        try self.emitConstant(try self.stringValue(source));
+    }
+
+    pub fn variable(self: *Parser, canAssign: bool) !void {
+        try self.namedVariable(self.previous.lexeme, canAssign);
+    }
+
+    pub fn namedVariable(self: *Parser, name: []const u8, canAssign: bool) !void {
+        const arg = try self.identifierConstant(name);
+
+        if (canAssign and self.match(.Equal)) {
+            try self.expression();
+            try self.emitUnaryOp(.SetGlobal, arg);
+        } else {
+            try self.emitUnaryOp(.GetGlobal, arg);
+        }
     }
 
     pub fn grouping(self: *Parser) !void {

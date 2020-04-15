@@ -34,6 +34,7 @@ pub const VM = struct {
     stack: ArrayList(Value), // NOTE, book uses a fixed size stack
     objects: ?*Obj,
     strings: Table,
+    globals: Table,
 
     pub fn init(allocator: *Allocator) VM {
         return VM{
@@ -43,12 +44,14 @@ pub const VM = struct {
             .stack = std.ArrayList(Value).init(allocator),
             .objects = null,
             .strings = Table.init(allocator),
+            .globals = Table.init(allocator),
         };
     }
 
     pub fn deinit(self: *VM) void {
         self.freeObjects();
         self.strings.deinit();
+        self.globals.deinit();
         self.stack.deinit();
     }
 
@@ -94,9 +97,41 @@ pub const VM = struct {
         }
     }
 
+    fn readString(self: *VM) *ObjString {
+        const constant = self.readByte();
+        const nameValue = self.chunk.constants.items[constant];
+        return &nameValue.Obj.data.String;
+    }
+
     fn runOp(self: *VM, opCode: OpCode) !void {
         switch (opCode) {
-            .Return => {
+            .Return => {},
+            .Pop => {
+                _ = self.pop();
+            },
+            .GetGlobal => {
+                const name = self.readString();
+                var value: Value = undefined;
+                if (!self.globals.get(name, &value)) {
+                    return self.runtimeError("Undefined variable '{}'.", .{name.bytes});
+                }
+                try self.push(value);
+            },
+            .DefineGlobal => {
+                _ = try self.globals.set(self.readString(), self.peek(0));
+                // NOTE don’t pop until value is in the hash table so
+                // that we don't lose the value if the GC runs during
+                // the set operation
+                _ = self.pop();
+            },
+            .SetGlobal => {
+                const name = self.readString();
+                if (try self.globals.set(name, self.peek(0))) {
+                    _ = self.globals.delete(name);
+                    return self.runtimeError("Undefined variable '{}'.", .{name.bytes});
+                }
+            },
+            .Print => {
                 printValue(self.pop());
                 std.debug.warn("\n", .{});
             },
@@ -117,9 +152,9 @@ pub const VM = struct {
                 const rhsBoxed = self.pop();
                 const lhsBoxed = self.pop();
                 switch (lhsBoxed) {
-                    .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers."),
+                    .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers.", .{}),
                     .Number => |lhs| switch (rhsBoxed) {
-                        .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers."),
+                        .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers.", .{}),
                         .Number => |rhs| try self.push(Value{ .Bool = lhs > rhs }),
                     },
                 }
@@ -128,9 +163,9 @@ pub const VM = struct {
                 const rhsBoxed = self.pop();
                 const lhsBoxed = self.pop();
                 switch (lhsBoxed) {
-                    .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers."),
+                    .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers.", .{}),
                     .Number => |lhs| switch (rhsBoxed) {
-                        .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers."),
+                        .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers.", .{}),
                         .Number => |rhs| try self.push(Value{ .Bool = lhs < rhs }),
                     },
                 }
@@ -138,7 +173,7 @@ pub const VM = struct {
             .Negate => {
                 const boxed = self.pop();
                 switch (boxed) {
-                    .Bool, .Nil, .Obj => return self.runtimeError("Operand must be a number."),
+                    .Bool, .Nil, .Obj => return self.runtimeError("Operand must be a number.", .{}),
                     .Number => |value| try self.push(Value{ .Number = -value }),
                 }
             },
@@ -146,13 +181,13 @@ pub const VM = struct {
                 const rhsBoxed = self.pop();
                 const lhsBoxed = self.pop();
                 switch (lhsBoxed) {
-                    .Bool, .Nil => return self.runtimeError("Operands must be numbers or strings."),
+                    .Bool, .Nil => return self.runtimeError("Operands must be numbers or strings.", .{}),
                     .Obj => |lhs| switch (rhsBoxed) {
-                        .Bool, .Nil, .Number => return self.runtimeError("Operands must be numbers or strings."),
+                        .Bool, .Nil, .Number => return self.runtimeError("Operands must be numbers or strings.", .{}),
                         .Obj => |rhs| try self.concatenate(lhs, rhs),
                     },
                     .Number => |lhs| switch (rhsBoxed) {
-                        .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers or strings."),
+                        .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers or strings.", .{}),
                         .Number => |rhs| try self.push(Value{ .Number = lhs + rhs }),
                     },
                 }
@@ -168,9 +203,9 @@ pub const VM = struct {
         const rhsBoxed = self.pop();
         const lhsBoxed = self.pop();
         switch (lhsBoxed) {
-            .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers."),
+            .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers.", .{}),
             .Number => |lhs| switch (rhsBoxed) {
-                .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers."),
+                .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers.", .{}),
                 .Number => |rhs| try self.push(Value{ .Number = op(lhs, rhs) }),
             },
         }
@@ -199,6 +234,10 @@ pub const VM = struct {
         try self.stack.append(value);
     }
 
+    fn peek(self: *VM, back: usize) Value {
+        return self.stack.items[self.stack.items.len - 1 - back];
+    }
+
     fn pop(self: *VM) Value {
         return self.stack.pop();
     }
@@ -217,12 +256,10 @@ pub const VM = struct {
         std.debug.warn("\n", .{});
     }
 
-    fn runtimeError(self: *VM, comptime message: []const u8) !void {
-        // TODO, allow passing extra parameters here. Need varargs now,
-        // but they're going away in zig 0.6.
+    fn runtimeError(self: *VM, comptime message: []const u8, args: var) !void {
         const line = self.chunk.code.items[self.ip];
 
-        std.debug.warn(message, .{});
+        std.debug.warn(message, args);
         std.debug.warn("\n[line {}] in script\n", .{line});
 
         return error.RuntimeError;
