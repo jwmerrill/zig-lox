@@ -1,5 +1,6 @@
 const std = @import("std");
 const warn = std.debug.warn;
+const maxInt = std.math.maxInt;
 const Allocator = std.mem.Allocator;
 const Scanner = @import("./scanner.zig").Scanner;
 const Token = @import("./scanner.zig").Token;
@@ -16,6 +17,7 @@ const verbose = @import("./debug.zig").verbose;
 // freed by the caller.
 pub fn compile(vm: *VM, source: []const u8) !void {
     var parser = Parser.init(vm, source);
+    defer parser.deinit();
     parser.advance();
     while (!parser.match(.Eof)) {
         try parser.declaration();
@@ -25,6 +27,27 @@ pub fn compile(vm: *VM, source: []const u8) !void {
 
     if (parser.hadError) return error.CompileError;
 }
+
+pub const Compiler = struct {
+    locals: std.ArrayList(Local),
+    scopeDepth: usize,
+
+    pub fn init(allocator: *Allocator) Compiler {
+        return Compiler{
+            .locals = std.ArrayList(Local).init(allocator),
+            .scopeDepth = 0,
+        };
+    }
+
+    pub fn deinit(self: *Compiler) void {
+        self.locals.deinit();
+    }
+};
+
+pub const Local = struct {
+    name: []const u8,
+    depth: isize,
+};
 
 const Precedence = enum(u8) {
     None,
@@ -84,6 +107,7 @@ const Parser = struct {
     previous: Token,
     hadError: bool,
     panicMode: bool,
+    compiler: Compiler,
 
     pub fn init(vm: *VM, source: []const u8) Parser {
         return Parser{
@@ -93,7 +117,12 @@ const Parser = struct {
             .previous = undefined,
             .hadError = false,
             .panicMode = false,
+            .compiler = Compiler.init(vm.allocator),
         };
+    }
+
+    pub fn deinit(self: *Parser) void {
+        self.compiler.deinit();
     }
 
     pub fn currentChunk(self: *Parser) *Chunk {
@@ -198,7 +227,7 @@ const Parser = struct {
 
     pub fn makeConstant(self: *Parser, value: Value) !u8 {
         const constant = try self.currentChunk().addConstant(value);
-        if (constant > std.math.maxInt(u8)) {
+        if (constant > maxInt(u8)) {
             self.err("Too many constants in one chunk.");
             return 0;
         }
@@ -206,7 +235,7 @@ const Parser = struct {
         return @intCast(u8, constant);
     }
 
-    pub fn declaration(self: *Parser) CompilerErrors!void {
+    pub fn declaration(self: *Parser) !void {
         if (self.match(.Var)) {
             try self.varDeclaration();
         } else {
@@ -216,19 +245,47 @@ const Parser = struct {
         if (self.panicMode) self.synchronize();
     }
 
-    pub fn statement(self: *Parser) CompilerErrors!void {
+    pub fn statement(self: *Parser) !void {
         if (self.match(.Print)) {
             try self.printStatement();
+        } else if (self.match(.LeftBrace)) {
+            self.beginScope();
+            try self.block();
+            try self.endScope();
         } else {
             try self.expressionStatement();
         }
     }
 
-    pub fn expression(self: *Parser) CompilerErrors!void {
+    pub fn beginScope(self: *Parser) void {
+        self.compiler.scopeDepth += 1;
+    }
+
+    pub fn endScope(self: *Parser) !void {
+        self.compiler.scopeDepth -= 1;
+
+        var locals = self.compiler.locals;
+        while (locals.items.len > 0 and
+            locals.items[locals.items.len - 1].depth > self.compiler.scopeDepth)
+        {
+            try self.emitOp(.Pop);
+            _ = locals.pop();
+        }
+    }
+
+    pub fn expression(self: *Parser) !void {
         try self.parsePrecedence(.Assignment);
     }
 
-    pub fn varDeclaration(self: *Parser) CompilerErrors!void {
+    pub fn block(self: *Parser) CompilerErrors!void {
+        while (!self.check(.RightBrace) and !self.check(.Eof)) {
+            try self.declaration();
+        }
+
+        self.consume(.RightBrace, "Expect '}' after block.");
+    }
+
+    pub fn varDeclaration(self: *Parser) !void {
         const global: u8 = try self.parseVariable("Expect variable name");
 
         if (self.match(.Equal)) {
@@ -241,13 +298,13 @@ const Parser = struct {
         try self.defineVariable(global);
     }
 
-    pub fn printStatement(self: *Parser) CompilerErrors!void {
+    pub fn printStatement(self: *Parser) !void {
         try self.expression();
         self.consume(.Semicolon, "Expect ';' after value.");
         try self.emitOp(.Print);
     }
 
-    pub fn expressionStatement(self: *Parser) CompilerErrors!void {
+    pub fn expressionStatement(self: *Parser) !void {
         try self.expression();
         self.consume(.Semicolon, "Expect ';' after value.");
         try self.emitOp(.Pop);
@@ -284,15 +341,76 @@ const Parser = struct {
 
     pub fn parseVariable(self: *Parser, message: []const u8) !u8 {
         self.consume(.Identifier, message);
+
+        try self.declareVariable();
+        if (self.compiler.scopeDepth > 0) return 0;
+
         return try self.identifierConstant(self.previous.lexeme);
     }
 
     pub fn defineVariable(self: *Parser, global: u8) !void {
+        if (self.compiler.scopeDepth > 0) {
+            self.markInitialized();
+            return;
+        }
+
         try self.emitUnaryOp(.DefineGlobal, global);
+    }
+
+    pub fn markInitialized(self: *Parser) void {
+        var locals = self.compiler.locals;
+        locals.items[locals.items.len - 1].depth = @intCast(isize, self.compiler.scopeDepth);
     }
 
     pub fn identifierConstant(self: *Parser, name: []const u8) !u8 {
         return try self.makeConstant(try self.stringValue(name));
+    }
+
+    pub fn declareVariable(self: *Parser) !void {
+        if (self.compiler.scopeDepth == 0) return;
+
+        const name = self.previous.lexeme;
+
+        var i: usize = 0;
+        while (i < self.compiler.locals.items.len) : (i += 1) {
+            const local = self.compiler.locals.items[self.compiler.locals.items.len - 1 - i];
+            if (local.depth != -1 and local.depth < self.compiler.scopeDepth) break;
+
+            if (std.mem.eql(u8, name, local.name)) {
+                self.err("Variable with this name already declared in this scope.");
+            }
+        }
+
+        try self.addLocal(name);
+    }
+
+    pub fn resolveLocal(self: *Parser, name: []const u8) isize {
+        var i: usize = 0;
+        var locals = self.compiler.locals;
+        while (i < locals.items.len) : (i += 1) {
+            const local = locals.items[locals.items.len - 1 - i];
+            if (std.mem.eql(u8, name, local.name)) {
+                if (local.depth == -1) {
+                    self.err("Cannot read local variable in its own initializer.");
+                }
+                return @intCast(isize, locals.items.len - 1 - i);
+            }
+        }
+
+        return -1;
+    }
+
+    pub fn addLocal(self: *Parser, name: []const u8) !void {
+        if (self.compiler.locals.items.len > maxInt(u8)) {
+            self.err("Too many local variables in function.");
+            return;
+        }
+
+        const local = Local{
+            .name = name,
+            .depth = -1,
+        };
+        try self.compiler.locals.append(local);
     }
 
     pub fn prefix(self: *Parser, tokenType: TokenType, canAssign: bool) !void {
@@ -392,13 +510,26 @@ const Parser = struct {
     }
 
     pub fn namedVariable(self: *Parser, name: []const u8, canAssign: bool) !void {
-        const arg = try self.identifierConstant(name);
+        var getOp: OpCode = undefined;
+        var setOp: OpCode = undefined;
+        var arg: u8 = undefined;
+        var resolvedArg = self.resolveLocal(name);
+
+        if (resolvedArg == -1) {
+            arg = try self.identifierConstant(name);
+            getOp = .GetGlobal;
+            setOp = .SetGlobal;
+        } else {
+            arg = @intCast(u8, resolvedArg);
+            getOp = .GetLocal;
+            setOp = .SetLocal;
+        }
 
         if (canAssign and self.match(.Equal)) {
             try self.expression();
-            try self.emitUnaryOp(.SetGlobal, arg);
+            try self.emitUnaryOp(setOp, arg);
         } else {
-            try self.emitUnaryOp(.GetGlobal, arg);
+            try self.emitUnaryOp(getOp, arg);
         }
     }
 

@@ -7,6 +7,8 @@ const printValue = @import("./value.zig").printValue;
 pub const OpCode = enum(u8) {
     Return,
     Pop,
+    GetLocal,
+    SetLocal,
     GetGlobal,
     DefineGlobal,
     SetGlobal,
@@ -79,6 +81,8 @@ pub const Chunk = struct {
         return switch (instruction) {
             .Return => self.simpleInstruction("OP_RETURN", offset),
             .Pop => self.simpleInstruction("OP_POP", offset),
+            .GetLocal => self.byteInstruction("OP_GET_LOCAl", offset),
+            .SetLocal => self.byteInstruction("OP_SET_LOCAL", offset),
             .GetGlobal => self.constantInstruction("OP_GET_GLOBAL", offset),
             .DefineGlobal => self.constantInstruction("OP_DEFINE_GLOBAL", offset),
             .SetGlobal => self.constantInstruction("OP_SET_GLOBAL", offset),
@@ -109,6 +113,13 @@ pub const Chunk = struct {
         std.debug.warn("{} {} ", .{ name, constant });
         printValue(self.constants.items[constant]);
         std.debug.warn("\n", .{});
+        return offset + 2;
+    }
+
+    fn byteInstruction(self: *Chunk, name: []const u8, offset: usize) usize {
+        const slot: u8 = self.code.items[offset + 1];
+        // TODO, book makes more effort on formatting here, see Chap 22.4
+        std.debug.warn("{} {}\n", .{ name, slot });
         return offset + 2;
     }
 

@@ -109,6 +109,14 @@ pub const VM = struct {
             .Pop => {
                 _ = self.pop();
             },
+            .GetLocal => {
+                const slot = self.readByte();
+                try self.push(self.stack.items[slot]);
+            },
+            .SetLocal => {
+                const slot = self.readByte();
+                self.stack.items[slot] = self.peek(0);
+            },
             .GetGlobal => {
                 const name = self.readString();
                 var value: Value = undefined;
