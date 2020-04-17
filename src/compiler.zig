@@ -194,6 +194,25 @@ const Parser = struct {
         self.hadError = true;
     }
 
+    pub fn emitJump(self: *Parser, op: OpCode) !usize {
+        try self.emitOp(op);
+        // Dummy operands that will be patched later
+        try self.emitByte(0xff);
+        try self.emitByte(0xff);
+        return self.currentChunk().code.items.len - 2;
+    }
+
+    pub fn patchJump(self: *Parser, offset: usize) void {
+        const jump = self.currentChunk().code.items.len - offset - 2;
+
+        if (jump > maxInt(u16)) {
+            self.err("Too much code to jump over.");
+        }
+
+        self.currentChunk().code.items[offset] = @intCast(u8, (jump >> 8) & 0xff);
+        self.currentChunk().code.items[offset + 1] = @intCast(u8, jump & 0xff);
+    }
+
     pub fn emitByte(self: *Parser, byte: u8) !void {
         try self.currentChunk().write(byte, self.previous.line);
     }
@@ -248,6 +267,8 @@ const Parser = struct {
     pub fn statement(self: *Parser) !void {
         if (self.match(.Print)) {
             try self.printStatement();
+        } else if (self.match(.If)) {
+            try self.ifStatement();
         } else if (self.match(.LeftBrace)) {
             self.beginScope();
             try self.block();
@@ -302,6 +323,23 @@ const Parser = struct {
         try self.expression();
         self.consume(.Semicolon, "Expect ';' after value.");
         try self.emitOp(.Print);
+    }
+
+    pub fn ifStatement(self: *Parser) CompilerErrors!void {
+        self.consume(.LeftParen, "Expect '(' after 'if'.");
+        try self.expression();
+        self.consume(.RightParen, "Expect ')' after condition.");
+
+        const thenJump = try self.emitJump(.JumpIfFalse);
+        try self.emitOp(.Pop);
+        try self.statement();
+        const elseJump = try self.emitJump(.Jump);
+
+        self.patchJump(thenJump);
+        try self.emitOp(.Pop);
+
+        if (self.match(.Else)) try self.statement();
+        self.patchJump(elseJump);
     }
 
     pub fn expressionStatement(self: *Parser) !void {

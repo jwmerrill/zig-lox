@@ -143,6 +143,14 @@ pub const VM = struct {
                 printValue(self.pop());
                 std.debug.warn("\n", .{});
             },
+            .Jump => {
+                const offset = self.readShort();
+                self.ip += offset;
+            },
+            .JumpIfFalse => {
+                const offset = self.readShort();
+                if (self.peek(0).isFalsey()) self.ip += offset;
+            },
             .Constant => {
                 const constant = self.readByte();
                 const value = self.chunk.constants.items[constant];
@@ -236,6 +244,12 @@ pub const VM = struct {
         const byte = self.chunk.code.items[self.ip];
         self.ip += 1;
         return byte;
+    }
+
+    fn readShort(self: *VM) u16 {
+        self.ip += 2;
+        const items = self.chunk.code.items;
+        return (@intCast(u16, items[self.ip - 2]) << 8) | items[self.ip - 1];
     }
 
     fn push(self: *VM, value: Value) !void {

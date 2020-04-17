@@ -13,6 +13,8 @@ pub const OpCode = enum(u8) {
     DefineGlobal,
     SetGlobal,
     Print,
+    Jump,
+    JumpIfFalse,
     Constant,
     Nil,
     True,
@@ -87,6 +89,8 @@ pub const Chunk = struct {
             .DefineGlobal => self.constantInstruction("OP_DEFINE_GLOBAL", offset),
             .SetGlobal => self.constantInstruction("OP_SET_GLOBAL", offset),
             .Print => self.simpleInstruction("OP_PRINT", offset),
+            .Jump => self.jumpInstruction("OP_JUMP", 1, offset),
+            .JumpIfFalse => self.jumpInstruction("OP_JUMP_IF_FALSE", 1, offset),
             .Constant => self.constantInstruction("OP_CONSTANT", offset),
             .Nil => self.simpleInstruction("OP_NIL", offset),
             .True => self.simpleInstruction("OP_TRUE", offset),
@@ -121,6 +125,14 @@ pub const Chunk = struct {
         // TODO, book makes more effort on formatting here, see Chap 22.4
         std.debug.warn("{} {}\n", .{ name, slot });
         return offset + 2;
+    }
+
+    fn jumpInstruction(self: *Chunk, name: []const u8, sign: isize, offset: usize) usize {
+        var jump = @intCast(u16, self.code.items[offset + 1]) << 8;
+        jump |= self.code.items[offset + 2];
+        const target = @intCast(isize, offset) + 3 + sign * @intCast(isize, jump);
+        std.debug.warn("{} {} -> {}\n", .{name, offset, target});
+        return offset + 3;
     }
 
     pub fn addConstant(self: *Chunk, value: Value) !u8 {
