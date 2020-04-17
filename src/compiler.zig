@@ -94,7 +94,9 @@ fn getPrecedence(tokenType: TokenType) Precedence {
         .Identifier, .String, .Number => .None,
 
         // Keywords.
-        .And, .Class, .Else, .False, .For, .Fun, .If, .Nil, .Or => .None,
+        .And => .And,
+        .Or => .Or,
+        .Class, .Else, .False, .For, .Fun, .If, .Nil => .None,
         .Print, .Return, .Super, .This, .True, .Var, .While, .Error => .None,
         .Eof => .None,
     };
@@ -395,6 +397,24 @@ const Parser = struct {
         try self.emitUnaryOp(.DefineGlobal, global);
     }
 
+    pub fn and_(self: *Parser) !void {
+        const endJump = try self.emitJump(.JumpIfFalse);
+        try self.emitOp(.Pop);
+        try self.parsePrecedence(.And);
+        self.patchJump(endJump);
+    }
+
+    pub fn or_(self: *Parser) !void {
+        const elseJump = try self.emitJump(.JumpIfFalse);
+        const endJump = try self.emitJump(.Jump);
+
+        self.patchJump(elseJump);
+        try self.emitOp(.Pop);
+
+        try self.parsePrecedence(.Or);
+        self.patchJump(endJump);
+    }
+
     pub fn markInitialized(self: *Parser) void {
         var locals = self.compiler.locals;
         locals.items[locals.items.len - 1].depth = @intCast(isize, self.compiler.scopeDepth);
@@ -454,61 +474,50 @@ const Parser = struct {
     pub fn prefix(self: *Parser, tokenType: TokenType, canAssign: bool) !void {
         switch (tokenType) {
             // Single-character tokens.
-            .LeftParen => return self.grouping(),
-            .RightParen, .LeftBrace, .RightBrace, .Comma, .Dot => {},
-            .Minus => return self.unary(),
-            .Plus, .Semicolon, .Slash, .Star => {},
+            .LeftParen => try self.grouping(),
+            .Minus => try self.unary(),
+            .RightParen, .LeftBrace, .RightBrace, .Comma, .Dot => self.prefixError(),
+            .Plus, .Semicolon, .Slash, .Star => self.prefixError(),
 
             // One or two character tokens.
-            .Bang => return self.unary(),
-            .BangEqual,
-            .EqualEqual,
-            .Greater,
-            .GreaterEqual,
-            .Less,
-            => {},
-            .LessEqual, .Equal => {},
+            .Bang => try self.unary(),
+            .Equal, .BangEqual, .EqualEqual, .Greater, .GreaterEqual => self.prefixError(),
+            .Less, .LessEqual => self.prefixError(),
 
             // Literals.
-            .Identifier => return self.variable(canAssign),
-            .String => return self.string(),
-            .Number => return self.number(),
+            .Identifier => try self.variable(canAssign),
+            .String => try self.string(),
+            .Number => try self.number(),
 
             // Keywords.
-            .Nil, .True, .False => return self.literal(),
-            .And, .Class, .Else, .For, .Fun, .If, .Or => {},
-            .Print, .Return, .Super, .This, .Var, .While, .Error => {},
-            .Eof => {},
+            .Nil, .True, .False => try self.literal(),
+            .And, .Class, .Else, .For, .Fun, .If, .Or => self.prefixError(),
+            .Print, .Return, .Super, .This, .Var, .While, .Error, .Eof => self.prefixError(),
         }
-
-        self.prefixError();
     }
 
     pub fn infix(self: *Parser, tokenType: TokenType, canAssign: bool) !void {
         switch (tokenType) {
             // Single-character tokens.
-            .LeftParen, .RightParen, .LeftBrace, .RightBrace, .Comma => {},
-            .Dot => {},
-            .Minus, .Plus => return self.binary(),
-            .Semicolon => {},
-            .Slash, .Star => return self.binary(),
+            .Minus, .Plus, .Slash, .Star => try self.binary(),
+            .LeftParen, .RightParen, .LeftBrace, .RightBrace, .Comma, .Dot => self.infixError(),
+            .Semicolon => self.infixError(),
 
             // One or two character tokens.
-            .Bang => {},
-            .BangEqual, .EqualEqual, .Greater => return self.binary(),
-            .GreaterEqual, .Less, .LessEqual => return self.binary(),
-            .Equal => {},
+            .BangEqual, .EqualEqual, .Greater, .GreaterEqual => try self.binary(),
+            .Less, .LessEqual => try self.binary(),
+
+            .Bang, .Equal => self.infixError(),
 
             // Literals.
-            .Identifier, .String, .Number => {},
+            .Identifier, .String, .Number => self.infixError(),
 
             // Keywords.
-            .And, .Class, .Else, .False, .For, .Fun, .If, .Nil, .Or => {},
-            .Print, .Return, .Super, .This, .True, .Var, .While, .Error => {},
-            .Eof => {},
+            .And => try self.and_(),
+            .Or => try self.or_(),
+            .Class, .Else, .False, .For, .Fun, .If, .Nil => self.infixError(),
+            .Print, .Return, .Super, .This, .True, .Var, .While, .Error, .Eof => self.infixError(),
         }
-
-        self.infixError();
     }
 
     pub fn number(self: *Parser) !void {

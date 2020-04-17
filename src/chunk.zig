@@ -131,7 +131,7 @@ pub const Chunk = struct {
         var jump = @intCast(u16, self.code.items[offset + 1]) << 8;
         jump |= self.code.items[offset + 2];
         const target = @intCast(isize, offset) + 3 + sign * @intCast(isize, jump);
-        std.debug.warn("{} {} -> {}\n", .{name, offset, target});
+        std.debug.warn("{} {} -> {}\n", .{ name, offset, target });
         return offset + 3;
     }
 
