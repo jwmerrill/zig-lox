@@ -9,6 +9,7 @@ const compile = @import("./compiler.zig").compile;
 const verbose = @import("./debug.zig").verbose;
 const Obj = @import("./object.zig").Obj;
 const ObjString = @import("./object.zig").ObjString;
+const ObjFunction = @import("./object.zig").ObjFunction;
 const Table = @import("./table.zig").Table;
 
 fn add(x: f64, y: f64) f64 {
@@ -27,10 +28,15 @@ fn div(x: f64, y: f64) f64 {
     return x / y;
 }
 
+pub const CallFrame = struct {
+    function: *Obj,
+    ip: usize,
+    slots: usize,
+};
+
 pub const VM = struct {
     allocator: *Allocator,
-    chunk: *Chunk,
-    ip: usize, // NOTE, book uses a byte pointer for this
+    frames: ArrayList(CallFrame), // NOTE, book uses a fixed size stack
     stack: ArrayList(Value), // NOTE, book uses a fixed size stack
     objects: ?*Obj,
     strings: Table,
@@ -39,8 +45,7 @@ pub const VM = struct {
     pub fn init(allocator: *Allocator) VM {
         return VM{
             .allocator = allocator,
-            .chunk = undefined,
-            .ip = undefined,
+            .frames = std.ArrayList(CallFrame).init(allocator),
             .stack = std.ArrayList(Value).init(allocator),
             .objects = null,
             .strings = Table.init(allocator),
@@ -70,14 +75,16 @@ pub const VM = struct {
         std.debug.assert(self.stack.items.len == 0);
         defer std.debug.assert(self.stack.items.len == 0);
 
-        var chunk = Chunk.init(self.allocator);
-        defer chunk.deinit();
-
-        self.chunk = &chunk;
-        self.ip = 0;
-
-        try compile(self, source);
+        const function = try compile(self, source);
+        try self.push(function.value());
+        const frame = try self.frames.append(CallFrame{
+            .function = function,
+            .ip = 0,
+            .slots = self.stack.items.len - 1,
+        });
         try self.run();
+        // Pop the call frame we put on the stack above
+        _ = self.pop();
     }
 
     fn run(self: *VM) !void {
@@ -87,7 +94,7 @@ pub const VM = struct {
             if (verbose) {
                 // Print debugging information
                 self.printStack();
-                _ = self.chunk.disassembleInstruction(self.ip);
+                _ = self.currentChunk().disassembleInstruction(self.currentFrame().ip);
             }
 
             const instruction = self.readByte();
@@ -99,7 +106,7 @@ pub const VM = struct {
 
     fn readString(self: *VM) *ObjString {
         const constant = self.readByte();
-        const nameValue = self.chunk.constants.items[constant];
+        const nameValue = self.currentChunk().constants.items[constant];
         return &nameValue.Obj.data.String;
     }
 
@@ -111,11 +118,11 @@ pub const VM = struct {
             },
             .GetLocal => {
                 const slot = self.readByte();
-                try self.push(self.stack.items[slot]);
+                try self.push(self.stack.items[self.currentFrame().slots + slot]);
             },
             .SetLocal => {
                 const slot = self.readByte();
-                self.stack.items[slot] = self.peek(0);
+                self.stack.items[self.currentFrame().slots + slot] = self.peek(0);
             },
             .GetGlobal => {
                 const name = self.readString();
@@ -145,19 +152,19 @@ pub const VM = struct {
             },
             .Jump => {
                 const offset = self.readShort();
-                self.ip += offset;
+                self.currentFrame().ip += offset;
             },
             .JumpIfFalse => {
                 const offset = self.readShort();
-                if (self.peek(0).isFalsey()) self.ip += offset;
+                if (self.peek(0).isFalsey()) self.currentFrame().ip += offset;
             },
             .Loop => {
                 const offset = self.readShort();
-                self.ip -= offset;
+                self.currentFrame().ip -= offset;
             },
             .Constant => {
                 const constant = self.readByte();
-                const value = self.chunk.constants.items[constant];
+                const value = self.currentChunk().constants.items[constant];
                 try self.push(value);
             },
             .Nil => try self.push(Value.Nil),
@@ -233,7 +240,9 @@ pub const VM = struct {
 
     fn concatenate(self: *VM, lhs: *Obj, rhs: *Obj) !void {
         switch (lhs.data) {
+            .Function => try self.runtimeError("Operands must be strings.", .{}),
             .String => |lhsStr| switch (rhs.data) {
+                .Function => try self.runtimeError("Operands must be strings.", .{}),
                 .String => |rhsStr| {
                     const buffer = try self.allocator.alloc(u8, lhsStr.bytes.len + rhsStr.bytes.len);
                     std.mem.copy(u8, buffer[0..lhsStr.bytes.len], lhsStr.bytes);
@@ -244,16 +253,26 @@ pub const VM = struct {
         }
     }
 
+    fn currentFrame(self: *VM) *CallFrame {
+        return &self.frames.items[self.frames.items.len - 1];
+    }
+
+    fn currentChunk(self: *VM) *Chunk {
+        return &self.currentFrame().function.data.Function.chunk;
+    }
+
     fn readByte(self: *VM) u8 {
-        const byte = self.chunk.code.items[self.ip];
-        self.ip += 1;
+        const frame = self.currentFrame();
+        const byte = self.currentChunk().code.items[frame.ip];
+        frame.ip += 1;
         return byte;
     }
 
     fn readShort(self: *VM) u16 {
-        self.ip += 2;
-        const items = self.chunk.code.items;
-        return (@intCast(u16, items[self.ip - 2]) << 8) | items[self.ip - 1];
+        const frame = self.currentFrame();
+        frame.ip += 2;
+        const items = self.currentChunk().code.items;
+        return (@intCast(u16, items[frame.ip - 2]) << 8) | items[frame.ip - 1];
     }
 
     fn push(self: *VM, value: Value) !void {
@@ -283,7 +302,7 @@ pub const VM = struct {
     }
 
     fn runtimeError(self: *VM, comptime message: []const u8, args: var) !void {
-        const line = self.chunk.code.items[self.ip];
+        const line = self.currentChunk().code.items[self.currentFrame().ip];
 
         std.debug.warn(message, args);
         std.debug.warn("\n[line {}] in script\n", .{line});

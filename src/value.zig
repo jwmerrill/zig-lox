@@ -53,6 +53,10 @@ pub fn printValue(boxed: Value) void {
         .Nil => std.debug.warn("nil", .{}),
         .Obj => |obj| switch (obj.data) {
             .String => |str| std.debug.warn("\"{}\"", .{str.bytes}),
+            .Function => |fun| {
+                const name = if (fun.name) |str| str.bytes else "<script>";
+                std.debug.warn("<fn {}>", .{name});
+            },
         },
     }
 }

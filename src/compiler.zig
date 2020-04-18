@@ -11,30 +11,51 @@ const OpCode = @import("./chunk.zig").OpCode;
 const Value = @import("./value.zig").Value;
 const Obj = @import("./object.zig").Obj;
 const ObjString = @import("./object.zig").ObjString;
+const ObjFunction = @import("./object.zig").ObjFunction;
 const verbose = @import("./debug.zig").verbose;
 
 // Note, the compiler allocates objects as part of parsing that must be
 // freed by the caller.
-pub fn compile(vm: *VM, source: []const u8) !void {
-    var parser = Parser.init(vm, source);
+pub fn compile(vm: *VM, source: []const u8) !*Obj {
+    var parser = try Parser.init(vm, source);
     defer parser.deinit();
     parser.advance();
     while (!parser.match(.Eof)) {
         try parser.declaration();
     }
     parser.consume(.Eof, "Expect end of expression.");
-    try parser.end();
+    const fun = try parser.end();
 
     if (parser.hadError) return error.CompileError;
+    return fun;
 }
 
+const FunctionType = enum {
+    Function, Script
+};
+
 pub const Compiler = struct {
+    // TODO, would be nice to be able to enforce that this is a function
+    // object
+    function: *Obj,
+    functionType: FunctionType,
     locals: std.ArrayList(Local),
     scopeDepth: usize,
 
-    pub fn init(allocator: *Allocator) Compiler {
+    pub fn init(vm: *VM, functionType: FunctionType) !Compiler {
+        var locals = std.ArrayList(Local).init(vm.allocator);
+        try locals.append(Local{
+            .depth = 0,
+            .name = "",
+        });
+
         return Compiler{
-            .locals = std.ArrayList(Local).init(allocator),
+            // TODO, book warns we should initialize this to null and
+            // set it later for GC reasons. I'll cross that bridge when
+            // I come to it.
+            .function = try Obj.function(vm),
+            .functionType = functionType,
+            .locals = locals,
             .scopeDepth = 0,
         };
     }
@@ -111,7 +132,7 @@ const Parser = struct {
     panicMode: bool,
     compiler: Compiler,
 
-    pub fn init(vm: *VM, source: []const u8) Parser {
+    pub fn init(vm: *VM, source: []const u8) !Parser {
         return Parser{
             .vm = vm,
             .scanner = Scanner.init(source),
@@ -119,7 +140,7 @@ const Parser = struct {
             .previous = undefined,
             .hadError = false,
             .panicMode = false,
-            .compiler = Compiler.init(vm.allocator),
+            .compiler = try Compiler.init(vm, .Script),
         };
     }
 
@@ -128,7 +149,7 @@ const Parser = struct {
     }
 
     pub fn currentChunk(self: *Parser) *Chunk {
-        return self.vm.chunk;
+        return &self.compiler.function.data.Function.chunk;
     }
 
     pub fn advance(self: *Parser) void {
@@ -246,14 +267,19 @@ const Parser = struct {
         try self.emitOp(.Return);
     }
 
-    pub fn end(self: *Parser) !void {
+    pub fn end(self: *Parser) !*Obj {
         try self.emitReturn();
 
         if (verbose) {
             if (!self.hadError) {
-                self.currentChunk().disassemble("code");
+                const maybeName = self.compiler.function.data.Function.name;
+                const name = if (maybeName) |o| o.bytes else "<script>";
+                // TODO, make this say <script> if name is empty
+                self.currentChunk().disassemble(name);
             }
         }
+
+        return self.compiler.function;
     }
 
     pub fn makeConstant(self: *Parser, value: Value) !u8 {

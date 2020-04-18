@@ -2,6 +2,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Value = @import("./value.zig").Value;
 const VM = @import("./vm.zig").VM;
+const Chunk = @import("./chunk.zig").Chunk;
 
 // NOTE book uses "struct inheritance" pattern to lay this out in a
 // a way that might be more memory efficient. Is it more memory
@@ -12,7 +13,7 @@ pub const Obj = struct {
     data: Data,
 
     pub const Data = union(enum) {
-        String: ObjString,
+        String: ObjString, Function: ObjFunction
     };
 
     pub fn create(vm: *VM) !*Obj {
@@ -28,6 +29,7 @@ pub const Obj = struct {
     pub fn destroy(self: *Obj, vm: *VM) void {
         switch (self.data) {
             .String => |*str| str.destroy(vm.allocator),
+            .Function => |*fun| fun.destroy(vm.allocator),
         }
 
         vm.allocator.destroy(self);
@@ -49,6 +51,12 @@ pub const Obj = struct {
             _ = try vm.strings.set(&object.data.String, object.value());
             return object;
         }
+    }
+
+    pub fn function(vm: *VM) !*Obj {
+        var object = try Obj.create(vm);
+        object.data = Obj.Data{ .Function = try ObjFunction.create(vm.allocator) };
+        return object;
     }
 
     pub fn value(self: *Obj) Value {
@@ -84,5 +92,26 @@ pub const ObjString = struct {
         }
 
         return hash;
+    }
+};
+
+pub const ObjFunction = struct {
+    arity: u8,
+    chunk: Chunk,
+    name: ?*ObjString,
+
+    pub fn create(allocator: *Allocator) !ObjFunction {
+        return ObjFunction{
+            .arity = 0,
+            .name = null,
+            .chunk = Chunk.init(allocator),
+        };
+    }
+
+    pub fn destroy(self: *ObjFunction, allocator: *Allocator) void {
+        self.chunk.deinit();
+
+        // TODO, do we need to free name also, or will the GC take care
+        // of that for us?
     }
 };
