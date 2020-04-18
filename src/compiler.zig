@@ -215,6 +215,16 @@ const Parser = struct {
         self.currentChunk().code.items[offset + 1] = @intCast(u8, jump & 0xff);
     }
 
+    pub fn emitLoop(self: *Parser, loopStart: usize) !void {
+        try self.emitOp(.Loop);
+
+        const offset = self.currentChunk().code.items.len - loopStart + 2;
+        if (offset > maxInt(u16)) self.err("Loop body too large.");
+
+        try self.emitByte(@intCast(u8, (offset >> 8) & 0xff));
+        try self.emitByte(@intCast(u8, offset & 0xff));
+    }
+
     pub fn emitByte(self: *Parser, byte: u8) !void {
         try self.currentChunk().write(byte, self.previous.line);
     }
@@ -271,6 +281,10 @@ const Parser = struct {
             try self.printStatement();
         } else if (self.match(.If)) {
             try self.ifStatement();
+        } else if (self.match(.While)) {
+            try self.whileStatement();
+        } else if (self.match(.For)) {
+            try self.forStatement();
         } else if (self.match(.LeftBrace)) {
             self.beginScope();
             try self.block();
@@ -342,6 +356,73 @@ const Parser = struct {
 
         if (self.match(.Else)) try self.statement();
         self.patchJump(elseJump);
+    }
+
+    pub fn whileStatement(self: *Parser) CompilerErrors!void {
+        const loopStart = self.currentChunk().code.items.len;
+
+        self.consume(.LeftParen, "Expect '(' after 'while'.");
+        try self.expression();
+        self.consume(.RightParen, "Expect ')' after condition.");
+
+        const exitJump = try self.emitJump(.JumpIfFalse);
+
+        try self.emitOp(.Pop);
+        try self.statement();
+
+        try self.emitLoop(loopStart);
+
+        self.patchJump(exitJump);
+        try self.emitOp(.Pop);
+    }
+
+    pub fn forStatement(self: *Parser) CompilerErrors!void {
+        self.beginScope();
+
+        self.consume(.LeftParen, "Expect '(' after 'for'.");
+        if (self.match(.Semicolon)) {
+            // No initializer
+        } else if (self.match(.Var)) {
+            try self.varDeclaration();
+        } else {
+            try self.expressionStatement();
+        }
+
+        var loopStart = self.currentChunk().code.items.len;
+
+        var maybeExitJump: ?usize = null;
+        if (!self.match(.Semicolon)) {
+            try self.expression();
+            self.consume(.Semicolon, "Expect ';' after loop condition.");
+
+            // Jump out of the loop if the condition is false
+            maybeExitJump = try self.emitJump(.JumpIfFalse);
+            try self.emitOp(.Pop); // Condition
+        }
+
+        if (!self.match(.RightParen)) {
+            const bodyJump = try self.emitJump(.Jump);
+
+            const incrementStart = self.currentChunk().code.items.len;
+            try self.expression();
+            try self.emitOp(.Pop);
+            self.consume(.RightParen, "Expect ')' after for clauses.");
+
+            try self.emitLoop(loopStart);
+            loopStart = incrementStart;
+            self.patchJump(bodyJump);
+        }
+
+        try self.statement();
+
+        try self.emitLoop(loopStart);
+
+        if (maybeExitJump) |exitJump| {
+            self.patchJump(exitJump);
+            try self.emitOp(.Pop);
+        }
+
+        try self.endScope();
     }
 
     pub fn expressionStatement(self: *Parser) !void {

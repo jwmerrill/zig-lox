@@ -151,6 +151,10 @@ pub const VM = struct {
                 const offset = self.readShort();
                 if (self.peek(0).isFalsey()) self.ip += offset;
             },
+            .Loop => {
+                const offset = self.readShort();
+                self.ip -= offset;
+            },
             .Constant => {
                 const constant = self.readByte();
                 const value = self.chunk.constants.items[constant];
