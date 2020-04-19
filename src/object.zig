@@ -4,114 +4,117 @@ const Value = @import("./value.zig").Value;
 const VM = @import("./vm.zig").VM;
 const Chunk = @import("./chunk.zig").Chunk;
 
-// NOTE book uses "struct inheritance" pattern to lay this out in a
-// a way that might be more memory efficient. Is it more memory
-// efficient? Can that approach be replicated in Zig? Seems to involve
-// some casts that Zig wouldn't consider safe
 pub const Obj = struct {
     next: ?*Obj,
-    data: Data,
+    objType: Type,
 
-    pub const Data = union(enum) {
-        String: ObjString, Function: ObjFunction
+    pub const Type = enum {
+        String, Function
     };
 
-    pub fn create(vm: *VM) !*Obj {
-        var object = try vm.allocator.create(Obj);
-        object.* = Obj{
+    pub fn create(vm: *VM, objType: Obj.Type) Obj {
+        return Obj{
             .next = vm.objects,
-            .data = undefined,
+            .objType = objType,
         };
-        vm.objects = object;
-        return object;
     }
 
     pub fn destroy(self: *Obj, vm: *VM) void {
-        switch (self.data) {
-            .String => |*str| str.destroy(vm.allocator),
-            .Function => |*fun| fun.destroy(vm.allocator),
-        }
-
-        vm.allocator.destroy(self);
-    }
-
-    // NOTE takes ownership of bytes. The GC will take care of
-    // deallocating them.
-    pub fn string(vm: *VM, bytes: []const u8) !*Obj {
-        var objString = ObjString.create(bytes);
-        var maybeInterned = vm.strings.findString(objString);
-        if (maybeInterned) |interned| {
-            objString.destroy(vm.allocator);
-            return interned.Obj;
-        } else {
-            var object = try Obj.create(vm);
-            object.data = Obj.Data{
-                .String = objString,
-            };
-            _ = try vm.strings.set(&object.data.String, object.value());
-            return object;
+        switch (self.objType) {
+            .String => self.asString().destroy(vm),
+            .Function => self.asFunction().destroy(vm),
         }
     }
 
-    pub fn function(vm: *VM) !*Obj {
-        var object = try Obj.create(vm);
-        object.data = Obj.Data{ .Function = try ObjFunction.create(vm.allocator) };
-        return object;
+    pub fn isString(self: *Obj) bool {
+        return self.objType == .String;
+    }
+
+    pub fn isFunction(self: *Obj) bool {
+        return self.objType == .Function;
+    }
+
+    pub fn asString(self: *Obj) *Obj.String {
+        return @fieldParentPtr(Obj.String, "obj", self);
+    }
+
+    pub fn asFunction(self: *Obj) *Obj.Function {
+        return @fieldParentPtr(Obj.Function, "obj", self);
     }
 
     pub fn value(self: *Obj) Value {
         return Value{ .Obj = self };
     }
-};
 
-pub const ObjString = struct {
-    hash: u32,
-    bytes: []const u8,
+    pub const String = struct {
+        obj: Obj,
+        hash: u32,
+        bytes: []const u8,
 
-    pub fn create(bytes: []const u8) ObjString {
-        return ObjString{
-            .hash = hashFn(bytes),
-            .bytes = bytes,
-        };
-    }
+        pub fn create(vm: *VM, bytes: []const u8) !*Obj.String {
+            const hash = hashFn(bytes);
 
-    pub fn destroy(self: *ObjString, allocator: *Allocator) void {
-        allocator.free(self.bytes);
-    }
-
-    fn hashFn(bytes: []const u8) u32 {
-        // NOTE zig standard library has its own implementation of this
-        // FNV-1a hash function already, in std.hash.fnv
-        var hash: u32 = 2166136261;
-
-        for (bytes) |byte| {
-            hash ^= byte;
-            // NOTE Zig makes you use a special operator when you want
-            // wraparound on overflow.
-            hash *%= 16777619;
+            if (vm.strings.findString(bytes, hash)) |interned| {
+                vm.allocator.free(bytes);
+                return interned;
+            } else {
+                var string = try vm.allocator.create(Obj.String);
+                string.* = Obj.String{
+                    .obj = Obj.create(vm, .String),
+                    .hash = hash,
+                    .bytes = bytes,
+                };
+                _ = try vm.strings.set(string, Value{ .Bool = true });
+                return string;
+            }
         }
 
-        return hash;
-    }
-};
+        pub fn destroy(self: *Obj.String, vm: *VM) void {
+            vm.allocator.free(self.bytes);
+            vm.allocator.destroy(self);
+        }
 
-pub const ObjFunction = struct {
-    arity: u8,
-    chunk: Chunk,
-    name: ?*ObjString,
+        fn hashFn(bytes: []const u8) u32 {
+            // NOTE zig standard library has its own implementation of this
+            // FNV-1a hash function already, in std.hash.fnv
+            var hash: u32 = 2166136261;
 
-    pub fn create(allocator: *Allocator) !ObjFunction {
-        return ObjFunction{
-            .arity = 0,
-            .name = null,
-            .chunk = Chunk.init(allocator),
-        };
-    }
+            for (bytes) |byte| {
+                hash ^= byte;
+                // NOTE Zig makes you use a special operator when you want
+                // wraparound on overflow.
+                hash *%= 16777619;
+            }
 
-    pub fn destroy(self: *ObjFunction, allocator: *Allocator) void {
-        self.chunk.deinit();
+            return hash;
+        }
+    };
 
-        // TODO, do we need to free name also, or will the GC take care
-        // of that for us?
-    }
+    pub const Function = struct {
+        obj: Obj,
+        arity: u8,
+        chunk: Chunk,
+        name: ?*Obj.String,
+
+        pub fn create(vm: *VM) !*Obj.Function {
+            var function = try vm.allocator.create(Obj.Function);
+
+            function.* = Obj.Function{
+                .obj = Obj.create(vm, .Function),
+                .arity = 0,
+                .name = null,
+                .chunk = Chunk.init(vm.allocator),
+            };
+
+            return function;
+        }
+
+        pub fn destroy(self: *Obj.Function, vm: *VM) void {
+            self.chunk.deinit();
+            vm.allocator.destroy(self);
+
+            // TODO, do we need to free name also, or will the GC take care
+            // of that for us?
+        }
+    };
 };

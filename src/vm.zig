@@ -8,8 +8,6 @@ const printValue = @import("./value.zig").printValue;
 const compile = @import("./compiler.zig").compile;
 const verbose = @import("./debug.zig").verbose;
 const Obj = @import("./object.zig").Obj;
-const ObjString = @import("./object.zig").ObjString;
-const ObjFunction = @import("./object.zig").ObjFunction;
 const Table = @import("./table.zig").Table;
 
 fn add(x: f64, y: f64) f64 {
@@ -29,7 +27,7 @@ fn div(x: f64, y: f64) f64 {
 }
 
 pub const CallFrame = struct {
-    function: *Obj,
+    function: *Obj.Function,
     ip: usize,
     slots: usize,
 };
@@ -76,7 +74,7 @@ pub const VM = struct {
         defer std.debug.assert(self.stack.items.len == 0);
 
         const function = try compile(self, source);
-        try self.push(function.value());
+        try self.push(function.obj.value());
         const frame = try self.frames.append(CallFrame{
             .function = function,
             .ip = 0,
@@ -104,10 +102,10 @@ pub const VM = struct {
         }
     }
 
-    fn readString(self: *VM) *ObjString {
+    fn readString(self: *VM) *Obj.String {
         const constant = self.readByte();
         const nameValue = self.currentChunk().constants.items[constant];
-        return &nameValue.Obj.data.String;
+        return nameValue.Obj.asString();
     }
 
     fn runOp(self: *VM, opCode: OpCode) !void {
@@ -239,15 +237,17 @@ pub const VM = struct {
     }
 
     fn concatenate(self: *VM, lhs: *Obj, rhs: *Obj) !void {
-        switch (lhs.data) {
+        switch (lhs.objType) {
             .Function => try self.runtimeError("Operands must be strings.", .{}),
-            .String => |lhsStr| switch (rhs.data) {
+            .String => switch (rhs.objType) {
                 .Function => try self.runtimeError("Operands must be strings.", .{}),
-                .String => |rhsStr| {
+                .String => {
+                    const lhsStr = lhs.asString();
+                    const rhsStr = rhs.asString();
                     const buffer = try self.allocator.alloc(u8, lhsStr.bytes.len + rhsStr.bytes.len);
                     std.mem.copy(u8, buffer[0..lhsStr.bytes.len], lhsStr.bytes);
                     std.mem.copy(u8, buffer[lhsStr.bytes.len..], rhsStr.bytes);
-                    try self.push((try Obj.string(self, buffer)).value());
+                    try self.push((try Obj.String.create(self, buffer)).obj.value());
                 },
             },
         }
@@ -258,7 +258,7 @@ pub const VM = struct {
     }
 
     fn currentChunk(self: *VM) *Chunk {
-        return &self.currentFrame().function.data.Function.chunk;
+        return &self.currentFrame().function.chunk;
     }
 
     fn readByte(self: *VM) u8 {

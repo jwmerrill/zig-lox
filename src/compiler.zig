@@ -10,13 +10,11 @@ const Chunk = @import("./chunk.zig").Chunk;
 const OpCode = @import("./chunk.zig").OpCode;
 const Value = @import("./value.zig").Value;
 const Obj = @import("./object.zig").Obj;
-const ObjString = @import("./object.zig").ObjString;
-const ObjFunction = @import("./object.zig").ObjFunction;
 const verbose = @import("./debug.zig").verbose;
 
 // Note, the compiler allocates objects as part of parsing that must be
 // freed by the caller.
-pub fn compile(vm: *VM, source: []const u8) !*Obj {
+pub fn compile(vm: *VM, source: []const u8) !*Obj.Function {
     var parser = try Parser.init(vm, source);
     defer parser.deinit();
     parser.advance();
@@ -37,7 +35,7 @@ const FunctionType = enum {
 pub const Compiler = struct {
     // TODO, would be nice to be able to enforce that this is a function
     // object
-    function: *Obj,
+    function: *Obj.Function,
     functionType: FunctionType,
     locals: std.ArrayList(Local),
     scopeDepth: usize,
@@ -53,7 +51,7 @@ pub const Compiler = struct {
             // TODO, book warns we should initialize this to null and
             // set it later for GC reasons. I'll cross that bridge when
             // I come to it.
-            .function = try Obj.function(vm),
+            .function = try Obj.Function.create(vm),
             .functionType = functionType,
             .locals = locals,
             .scopeDepth = 0,
@@ -149,7 +147,7 @@ const Parser = struct {
     }
 
     pub fn currentChunk(self: *Parser) *Chunk {
-        return &self.compiler.function.data.Function.chunk;
+        return &self.compiler.function.chunk;
     }
 
     pub fn advance(self: *Parser) void {
@@ -267,12 +265,12 @@ const Parser = struct {
         try self.emitOp(.Return);
     }
 
-    pub fn end(self: *Parser) !*Obj {
+    pub fn end(self: *Parser) !*Obj.Function {
         try self.emitReturn();
 
         if (verbose) {
             if (!self.hadError) {
-                const maybeName = self.compiler.function.data.Function.name;
+                const maybeName = self.compiler.function.name;
                 const name = if (maybeName) |o| o.bytes else "<script>";
                 // TODO, make this say <script> if name is empty
                 self.currentChunk().disassemble(name);
@@ -650,8 +648,8 @@ const Parser = struct {
     pub fn stringValue(self: *Parser, source: []const u8) !Value {
         const buffer = try self.vm.allocator.alloc(u8, source.len);
         std.mem.copy(u8, buffer, source);
-        const obj = try Obj.string(self.vm, buffer);
-        return obj.value();
+        const str = try Obj.String.create(self.vm, buffer);
+        return str.obj.value();
     }
 
     pub fn string(self: *Parser) !void {

@@ -1,7 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Obj = @import("./object.zig").Obj;
-const ObjString = @import("./object.zig").ObjString;
 const Value = @import("./value.zig").Value;
 
 pub const Table = struct {
@@ -21,7 +20,7 @@ pub const Table = struct {
         self.allocator.free(self.entries);
     }
 
-    pub fn set(self: *Table, key: *ObjString, value: Value) !bool {
+    pub fn set(self: *Table, key: *Obj.String, value: Value) !bool {
         // Encodes a 75% capacity
         if (4 * (self.count + 1) > 3 * self.entries.len) {
             try self.increaseCapacity();
@@ -41,7 +40,7 @@ pub const Table = struct {
         return isNewKey;
     }
 
-    pub fn get(self: *Table, key: *ObjString, value: *Value) bool {
+    pub fn get(self: *Table, key: *Obj.String, value: *Value) bool {
         if (self.entries.len == 0) return false;
 
         const entry = findEntry(self.entries, key);
@@ -52,7 +51,7 @@ pub const Table = struct {
         return true;
     }
 
-    pub fn delete(self: *Table, key: *ObjString) bool {
+    pub fn delete(self: *Table, key: *Obj.String) bool {
         if (self.entries.len == 0) return false;
 
         var entry = findEntry(self.entries, key);
@@ -100,7 +99,7 @@ pub const Table = struct {
         }
     }
 
-    pub fn findEntry(entries: []Entry, key: *ObjString) *Entry {
+    pub fn findEntry(entries: []Entry, key: *Obj.String) *Entry {
         var index = key.hash % entries.len;
         var maybeTombstone: ?*Entry = null;
 
@@ -122,21 +121,21 @@ pub const Table = struct {
         }
     }
 
-    pub fn findString(self: *Table, key: ObjString) ?Value {
+    pub fn findString(self: *Table, bytes: []const u8, hash: u32) ?*Obj.String {
         const entries = self.entries;
         if (entries.len == 0) return null;
 
-        var index = key.hash % entries.len;
+        var index = hash % entries.len;
 
         // Linear probing on entries
         while (true) {
             var entry = entries[index];
 
             if (entry.key) |entryKey| {
-                if (entryKey.hash == key.hash and
-                    std.mem.eql(u8, entryKey.bytes, key.bytes))
+                if (entryKey.hash == hash and
+                    std.mem.eql(u8, entryKey.bytes, bytes))
                 {
-                    return entry.value;
+                    return entryKey;
                 }
             } else if (!entry.isTombstone()) {
                 // Stop if we find an empty non-tombstone entry.
@@ -149,7 +148,7 @@ pub const Table = struct {
 };
 
 pub const Entry = struct {
-    key: ?*ObjString,
+    key: ?*Obj.String,
     value: Value,
 
     pub fn isTombstone(self: *Entry) bool {

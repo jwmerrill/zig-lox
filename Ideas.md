@@ -3,9 +3,10 @@
     - I guess we need the bytecode buffer to store data like indexes into the constants array in addition to opcodes. Forces us to say the underlying datatype of the enum.
 - Is there an advantage to storing operands as later bytes, instead of making the opcodes a richer data structure?
 - How do we find out if we forgot to deinitialize something in deinit?
+    - GeneralPurposeDebugAllocator is maybe supposed to help with this when it lands
 - Use slices for many places the book uses pointers, e.g. for the scanner state and for lexemes
 - Do identifierType switch with comptime
-- Represent compile and interpreter errors using Zig's error system
+- [x] Represent compile and interpreter errors using Zig's error system
 - Note, skipping parse "rules" in favor of separate switches for precedence and unary/binary parsing. Slightly more verbose, but simpler.
 - Maybe move getPrecedence to a different file?
 - Writing "try" a lot. Are there any suggested style improvements?
@@ -15,14 +16,20 @@
 - Can we cut down on boilerplate in VM's Add/Subtract/Multiply/Divide routines?
 - Fix printing of float values
 - Who "owns" the memory that holds string values created by the parser? Seems natural for the VM to own this memory, since it will also be responsible for owning memory created at runtime.
+    - Yes, the vm/GC owns this memory
 - Currently using ?*Obj for "next" pointer in objects. Could probably save space by representing the end of the list with a pointer that points back to the current object instead of using an optional here.
+    - No, ?*Obj doesn't take more space than *Obj--it just allows a 0 pointer.
 - Interesting that lox chooses not to implement any escapes in strings
 - How should we handle OutOfMemory?
 - Could make our hash table generic for not much more effort. But could also just use the standard library hash map, which is already generic.
 - Why doesn't hash table get function just return the value it finds?
+    - I think this might just be working around C's lack of multiple returns
 - Would probably be more efficient to use Zig's standard library hash map to implement string interning, since there is only one possible value, and Zig knows how to optimize that case.
 - Choosing not to implement copyString for now--it's really a performance optimization on top of takeString. May benchmark at the "optimization" phase to decide if this is worth it.
-- Using *ObjString as the key for our hash table is a little tricky. You have to put an ObjString inside an Obj to get a valid pointer, but an Obj can also hold other kinds of data. Initially got tripped up by passing a pointer to a local variable bound to an ObjString.
+- Using *Obj.String as the key for our hash table is a little tricky. You have to put an Obj.String inside an Obj to get a valid pointer, but an Obj can also hold other kinds of data. Initially got tripped up by passing a pointer to a local variable bound to an Obj.String.
+    - This was made easier by following a struct-inheritance like strategy
 - Could use `@fieldParentPtr` in strings lookup table to look up the relevant object or value reference instead of storing it as the value in the hash table, if we wanted to. Would match design in book slightly better.
+    - Again made easier by struct-inheritance
 - Allow repl line length to be longer than 256
 - Separate functions with switches for precedence, infix, and prefix are working out really nicely. Means we don't have to plumb `canAssign` to tons of places that don't care about it.
+- Ended up implementing something similar to struct inheritance by keeping an obj reference in concrete object types, and using @fieldParentPtr to go from a reference to this obj to a reference to the concrete object
