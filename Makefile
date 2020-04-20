@@ -1,12 +1,18 @@
 all: lox
 
+.PHONY: clean
+clean:
+	rm -rf build
+	rm -rf zig-cache
+	cd craftinginterpreters && make clean
+
 .PHONY: lox
 lox:
-	zig build-exe src/main.zig --name lox --output-dir build
+	zig build --prefix ./build
 
 test: lox
 	mkdir -p craftinginterpreters/build
-	cp build/lox craftinginterpreters/build/cloxd
+	cp build/bin/lox craftinginterpreters/build/cloxd
 	cd craftinginterpreters && ./util/test.py clox
 
 setup:
