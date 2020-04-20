@@ -50,7 +50,7 @@ pub fn printValue(boxed: Value) !void {
     const stdout = std.io.getStdOut().outStream();
 
     switch (boxed) {
-        .Number => |value| try stdout.print("{}", .{value}),
+        .Number => |value| try stdout.print("{d}", .{value}),
         .Bool => |value| try stdout.print("{}", .{value}),
         .Nil => try stdout.print("nil", .{}),
         .Obj => |obj| switch (obj.objType) {
