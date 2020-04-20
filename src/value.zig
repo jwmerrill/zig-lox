@@ -46,16 +46,18 @@ pub const Value = union(enum) {
     }
 };
 
-pub fn printValue(boxed: Value) void {
+pub fn printValue(boxed: Value) !void {
+    const stdout = std.io.getStdOut().outStream();
+
     switch (boxed) {
-        .Number => |value| std.debug.warn("{}", .{value}),
-        .Bool => |value| std.debug.warn("{}", .{value}),
-        .Nil => std.debug.warn("nil", .{}),
+        .Number => |value| try stdout.print("{}", .{value}),
+        .Bool => |value| try stdout.print("{}", .{value}),
+        .Nil => try stdout.print("nil", .{}),
         .Obj => |obj| switch (obj.objType) {
-            .String => std.debug.warn("\"{}\"", .{obj.asString().bytes}),
+            .String => try stdout.print("{}", .{obj.asString().bytes}),
             .Function => {
                 const name = if (obj.asFunction().name) |str| str.bytes else "<script>";
-                std.debug.warn("<fn {}>", .{name});
+                try stdout.print("<fn {}>", .{name});
             },
         },
     }

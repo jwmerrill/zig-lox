@@ -145,8 +145,9 @@ pub const VM = struct {
                 }
             },
             .Print => {
-                printValue(self.pop());
-                std.debug.warn("\n", .{});
+                const stdout = std.io.getStdOut().outStream();
+                try printValue(self.pop());
+                try stdout.print("\n", .{});
             },
             .Jump => {
                 const offset = self.readShort();

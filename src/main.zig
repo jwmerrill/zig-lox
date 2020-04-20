@@ -40,7 +40,7 @@ fn repl(allocator: *Allocator) !void {
         const source = sourceBuf[0..amt];
         vm.interpret(source) catch |err| switch (err) {
             error.CompileError, error.RuntimeError => {},
-            error.OutOfMemory => return err,
+            else => return err,
         };
     }
 }
@@ -54,6 +54,6 @@ fn runFile(allocator: *Allocator, path: []const u8) !void {
     vm.interpret(source) catch |err| switch (err) {
         error.CompileError => process.exit(65),
         error.RuntimeError => process.exit(70),
-        error.OutOfMemory => return err,
+        else => return err,
     };
 }
