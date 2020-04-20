@@ -207,13 +207,13 @@ pub const VM = struct {
                 const rhsBoxed = self.pop();
                 const lhsBoxed = self.pop();
                 switch (lhsBoxed) {
-                    .Bool, .Nil => return self.runtimeError("Operands must be numbers or strings.", .{}),
+                    .Bool, .Nil => return self.runtimeError("Operands must be two numbers or two strings.", .{}),
                     .Obj => |lhs| switch (rhsBoxed) {
-                        .Bool, .Nil, .Number => return self.runtimeError("Operands must be numbers or strings.", .{}),
+                        .Bool, .Nil, .Number => return self.runtimeError("Operands must be two numbers or two strings.", .{}),
                         .Obj => |rhs| try self.concatenate(lhs, rhs),
                     },
                     .Number => |lhs| switch (rhsBoxed) {
-                        .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers or strings.", .{}),
+                        .Bool, .Nil, .Obj => return self.runtimeError("Operands must be two numbers or two strings.", .{}),
                         .Number => |rhs| try self.push(Value{ .Number = lhs + rhs }),
                     },
                 }
@@ -303,7 +303,7 @@ pub const VM = struct {
     }
 
     fn runtimeError(self: *VM, comptime message: []const u8, args: var) !void {
-        const line = self.currentChunk().code.items[self.currentFrame().ip];
+        const line = self.currentChunk().lines.items[self.currentFrame().ip];
 
         std.debug.warn(message, args);
         std.debug.warn("\n[line {}] in script\n", .{line});
