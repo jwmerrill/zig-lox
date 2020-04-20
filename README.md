@@ -12,6 +12,22 @@ Executing a file:
 zig run src/main.zig -- examples/arithmetic.lox
 ```
 
+### Running tests
+
+This project includes the crafting interpreters book repository as a submodule to allow running its tests.
+
+Before running tests the first time, run
+
+```
+make setup
+```
+
+To run tests, run
+
+```
+make test
+```
+
 ### Status
 
 Incomplete
