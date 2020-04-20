@@ -325,7 +325,7 @@ const Parser = struct {
     pub fn endScope(self: *Parser) !void {
         self.compiler.scopeDepth -= 1;
 
-        var locals = self.compiler.locals;
+        var locals = &self.compiler.locals;
         while (locals.items.len > 0 and
             locals.items[locals.items.len - 1].depth > self.compiler.scopeDepth)
         {
@@ -521,7 +521,7 @@ const Parser = struct {
     }
 
     pub fn markInitialized(self: *Parser) void {
-        var locals = self.compiler.locals;
+        var locals = &self.compiler.locals;
         locals.items[locals.items.len - 1].depth = @intCast(isize, self.compiler.scopeDepth);
     }
 
@@ -549,7 +549,7 @@ const Parser = struct {
 
     pub fn resolveLocal(self: *Parser, name: []const u8) isize {
         var i: usize = 0;
-        var locals = self.compiler.locals;
+        var locals = &self.compiler.locals;
         while (i < locals.items.len) : (i += 1) {
             const local = locals.items[locals.items.len - 1 - i];
             if (std.mem.eql(u8, name, local.name)) {
