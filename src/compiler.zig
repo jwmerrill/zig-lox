@@ -347,7 +347,7 @@ const Parser = struct {
     }
 
     pub fn varDeclaration(self: *Parser) !void {
-        const global: u8 = try self.parseVariable("Expect variable name");
+        const global: u8 = try self.parseVariable("Expect variable name.");
 
         if (self.match(.Equal)) {
             try self.expression();
@@ -451,7 +451,7 @@ const Parser = struct {
 
     pub fn expressionStatement(self: *Parser) !void {
         try self.expression();
-        self.consume(.Semicolon, "Expect ';' after value.");
+        self.consume(.Semicolon, "Expect ';' after expression.");
         try self.emitOp(.Pop);
     }
 
