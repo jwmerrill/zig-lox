@@ -113,7 +113,7 @@ pub const Table = struct {
                 if (entry.isTombstone()) {
                     if (maybeTombstone == null) maybeTombstone = entry;
                 } else {
-                    return if (maybeTombstone) |tombstone| tombstone else entry;
+                    return maybeTombstone orelse entry;
                 }
             }
 
