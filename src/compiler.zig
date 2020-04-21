@@ -15,7 +15,8 @@ const verbose = @import("./debug.zig").verbose;
 // Note, the compiler allocates objects as part of parsing that must be
 // freed by the caller.
 pub fn compile(vm: *VM, source: []const u8) !*Obj.Function {
-    var parser = try Parser.init(vm, source);
+    var compiler = try Compiler.init(vm, .Script, null);
+    var parser = try Parser.init(vm, &compiler, source);
     defer parser.deinit();
     parser.advance();
     while (!parser.match(.Eof)) {
@@ -35,12 +36,13 @@ const FunctionType = enum {
 pub const Compiler = struct {
     // TODO, would be nice to be able to enforce that this is a function
     // object
+    enclosing: ?*Compiler,
     function: *Obj.Function,
     functionType: FunctionType,
     locals: std.ArrayList(Local),
     scopeDepth: usize,
 
-    pub fn init(vm: *VM, functionType: FunctionType) !Compiler {
+    pub fn init(vm: *VM, functionType: FunctionType, enclosing: ?*Compiler) !Compiler {
         var locals = std.ArrayList(Local).init(vm.allocator);
         try locals.append(Local{
             .depth = 0,
@@ -48,9 +50,10 @@ pub const Compiler = struct {
         });
 
         return Compiler{
-            // TODO, book warns we should initialize this to null and
-            // set it later for GC reasons. I'll cross that bridge when
-            // I come to it.
+            .enclosing = enclosing,
+            // TODO, book warns we should initialize function to null
+            // and set it later for GC reasons. I'll cross that bridge
+            // when I come to it.
             .function = try Obj.Function.create(vm),
             .functionType = functionType,
             .locals = locals,
@@ -128,9 +131,9 @@ const Parser = struct {
     previous: Token,
     hadError: bool,
     panicMode: bool,
-    compiler: Compiler,
+    compiler: *Compiler,
 
-    pub fn init(vm: *VM, source: []const u8) !Parser {
+    pub fn init(vm: *VM, compiler: *Compiler, source: []const u8) !Parser {
         return Parser{
             .vm = vm,
             .scanner = Scanner.init(source),
@@ -138,7 +141,7 @@ const Parser = struct {
             .previous = undefined,
             .hadError = false,
             .panicMode = false,
-            .compiler = try Compiler.init(vm, .Script),
+            .compiler = compiler,
         };
     }
 
@@ -262,6 +265,7 @@ const Parser = struct {
     }
 
     pub fn emitReturn(self: *Parser) !void {
+        try self.emitOp(.Nil);
         try self.emitOp(.Return);
     }
 
@@ -272,12 +276,15 @@ const Parser = struct {
             if (!self.hadError) {
                 const maybeName = self.compiler.function.name;
                 const name = if (maybeName) |o| o.bytes else "<script>";
-                // TODO, make this say <script> if name is empty
                 self.currentChunk().disassemble(name);
             }
         }
 
-        return self.compiler.function;
+        const fun = self.compiler.function;
+        if (self.compiler.enclosing) |compiler| {
+            self.compiler = compiler;
+        }
+        return fun;
     }
 
     pub fn makeConstant(self: *Parser, value: Value) !u8 {
@@ -291,7 +298,9 @@ const Parser = struct {
     }
 
     pub fn declaration(self: *Parser) !void {
-        if (self.match(.Var)) {
+        if (self.match(.Fun)) {
+            try self.funDeclaration();
+        } else if (self.match(.Var)) {
             try self.varDeclaration();
         } else {
             try self.statement();
@@ -303,6 +312,8 @@ const Parser = struct {
     pub fn statement(self: *Parser) !void {
         if (self.match(.Print)) {
             try self.printStatement();
+        } else if (self.match(.Return)) {
+            try self.returnStatement();
         } else if (self.match(.If)) {
             try self.ifStatement();
         } else if (self.match(.While)) {
@@ -346,6 +357,44 @@ const Parser = struct {
         self.consume(.RightBrace, "Expect '}' after block.");
     }
 
+    pub fn function(self: *Parser, functionType: FunctionType) !void {
+        var compiler = try Compiler.init(self.vm, functionType, self.compiler);
+        self.compiler = &compiler;
+        self.compiler.function.name = try Obj.String.copy(self.vm, self.previous.lexeme);
+        self.beginScope();
+
+        // Compile the parameter list
+        self.consume(.LeftParen, "Expect '(' after function name.");
+        if (!self.check(.RightParen)) {
+            while (true) {
+                if (self.compiler.function.arity == 255) {
+                    self.errorAtCurrent("Cannot have more than 255 parameters.");
+                    break;
+                }
+
+                self.compiler.function.arity += 1;
+                const paramConstant = try self.parseVariable("Expect parameter name.");
+                try self.defineVariable(paramConstant);
+                if (!self.match(.Comma)) break;
+            }
+        }
+        self.consume(.RightParen, "Expect ')' after parameters.");
+
+        // The body.
+        self.consume(.LeftBrace, "Expect '{' before function body.");
+        try self.block();
+
+        const fun = try self.end();
+        try self.emitUnaryOp(.Constant, try self.makeConstant(fun.obj.value()));
+    }
+
+    pub fn funDeclaration(self: *Parser) !void {
+        const global = try self.parseVariable("Expect function name.");
+        self.markInitialized();
+        try self.function(.Function);
+        try self.defineVariable(global);
+    }
+
     pub fn varDeclaration(self: *Parser) !void {
         const global: u8 = try self.parseVariable("Expect variable name.");
 
@@ -363,6 +412,20 @@ const Parser = struct {
         try self.expression();
         self.consume(.Semicolon, "Expect ';' after value.");
         try self.emitOp(.Print);
+    }
+
+    pub fn returnStatement(self: *Parser) !void {
+        if (self.compiler.functionType == .Script) {
+            return self.err("Cannot return from top-level code.");
+        }
+
+        if (self.match(.Semicolon)) {
+            try self.emitReturn();
+        } else {
+            try self.expression();
+            self.consume(.Semicolon, "Expect ';' after return value.");
+            try self.emitOp(.Return);
+        }
     }
 
     pub fn ifStatement(self: *Parser) CompilerErrors!void {
@@ -521,8 +584,10 @@ const Parser = struct {
     }
 
     pub fn markInitialized(self: *Parser) void {
+        const depth = self.compiler.scopeDepth;
+        if (depth == 0) return;
         var locals = &self.compiler.locals;
-        locals.items[locals.items.len - 1].depth = @intCast(isize, self.compiler.scopeDepth);
+        locals.items[locals.items.len - 1].depth = @intCast(isize, depth);
     }
 
     pub fn identifierConstant(self: *Parser, name: []const u8) !u8 {
@@ -605,7 +670,8 @@ const Parser = struct {
         switch (tokenType) {
             // Single-character tokens.
             .Minus, .Plus, .Slash, .Star => try self.binary(),
-            .LeftParen, .RightParen, .LeftBrace, .RightBrace, .Comma, .Dot => self.infixError(),
+            .LeftParen => try self.call(),
+            .RightParen, .LeftBrace, .RightBrace, .Comma, .Dot => self.infixError(),
             .Semicolon => self.infixError(),
 
             // One or two character tokens.
@@ -646,10 +712,7 @@ const Parser = struct {
     }
 
     pub fn stringValue(self: *Parser, source: []const u8) !Value {
-        const buffer = try self.vm.allocator.alloc(u8, source.len);
-        std.mem.copy(u8, buffer, source);
-        const str = try Obj.String.create(self.vm, buffer);
-        return str.obj.value();
+        return (try Obj.String.copy(self.vm, source)).obj.value();
     }
 
     pub fn string(self: *Parser) !void {
@@ -733,5 +796,29 @@ const Parser = struct {
             .Slash => try self.emitOp(.Divide),
             else => self.err("Unexpected binary operator"), // unreachable
         }
+    }
+
+    pub fn call(self: *Parser) !void {
+        const argCount = try self.argumentList();
+        try self.emitUnaryOp(.Call, argCount);
+    }
+
+    pub fn argumentList(self: *Parser) !u8 {
+        var argCount: u8 = 0;
+        if (!self.check(.RightParen)) {
+            while (true) {
+                try self.expression();
+
+                if (argCount == 255) {
+                    self.err("Cannot have more than 255 arguments.");
+                    break;
+                }
+                argCount += 1;
+                if (!self.match(.Comma)) break;
+            }
+        }
+
+        self.consume(.RightParen, "Expect ')' after arguments.");
+        return argCount;
     }
 };

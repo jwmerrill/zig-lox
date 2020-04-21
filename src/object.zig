@@ -9,7 +9,7 @@ pub const Obj = struct {
     objType: Type,
 
     pub const Type = enum {
-        String, Function
+        String, Function, NativeFunction
     };
 
     pub fn create(vm: *VM, objType: Obj.Type) Obj {
@@ -23,6 +23,7 @@ pub const Obj = struct {
         switch (self.objType) {
             .String => self.asString().destroy(vm),
             .Function => self.asFunction().destroy(vm),
+            .NativeFunction => self.asFunction().destroy(vm),
         }
     }
 
@@ -34,12 +35,20 @@ pub const Obj = struct {
         return self.objType == .Function;
     }
 
+    pub fn isNativeFunction(self: *Obj) bool {
+        return self.objType == .NativeFunction;
+    }
+
     pub fn asString(self: *Obj) *Obj.String {
         return @fieldParentPtr(Obj.String, "obj", self);
     }
 
     pub fn asFunction(self: *Obj) *Obj.Function {
         return @fieldParentPtr(Obj.Function, "obj", self);
+    }
+
+    pub fn asNativeFunction(self: *Obj) *Obj.NativeFunction {
+        return @fieldParentPtr(Obj.NativeFunction, "obj", self);
     }
 
     pub fn value(self: *Obj) Value {
@@ -67,6 +76,12 @@ pub const Obj = struct {
                 _ = try vm.strings.set(string, Value{ .Bool = true });
                 return string;
             }
+        }
+
+        pub fn copy(vm: *VM, source: []const u8) !*Obj.String {
+            const buffer = try vm.allocator.alloc(u8, source.len);
+            std.mem.copy(u8, buffer, source);
+            return Obj.String.create(vm, buffer);
         }
 
         pub fn destroy(self: *Obj.String, vm: *VM) void {
@@ -115,6 +130,28 @@ pub const Obj = struct {
 
             // TODO, do we need to free name also, or will the GC take care
             // of that for us?
+        }
+    };
+
+    pub const NativeFunction = struct {
+        obj: Obj,
+        function: NativeFunctionType,
+
+        pub const NativeFunctionType = fn (args: []Value) Value;
+
+        pub fn create(vm: *VM, function: NativeFunctionType) !*Obj.NativeFunction {
+            const out = try vm.allocator.create(Obj.NativeFunction);
+
+            out.* = Obj.NativeFunction{
+                .obj = Obj.create(vm, .NativeFunction),
+                .function = function,
+            };
+
+            return out;
+        }
+
+        pub fn destroy(self: *Obj.NativeFunction, fm: *VM) void {
+            vm.allocator.destroy(self);
         }
     };
 };

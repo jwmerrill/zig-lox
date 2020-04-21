@@ -16,6 +16,7 @@ pub const OpCode = enum(u8) {
     Jump,
     JumpIfFalse,
     Loop,
+    Call,
     Constant,
     Nil,
     True,
@@ -93,6 +94,7 @@ pub const Chunk = struct {
             .Jump => self.jumpInstruction("OP_JUMP", 1, offset),
             .JumpIfFalse => self.jumpInstruction("OP_JUMP_IF_FALSE", 1, offset),
             .Loop => self.jumpInstruction("OP_LOOP", -1, offset),
+            .Call => self.byteInstruction("OP_CALL", offset),
             .Constant => self.constantInstruction("OP_CONSTANT", offset),
             .Nil => self.simpleInstruction("OP_NIL", offset),
             .True => self.simpleInstruction("OP_TRUE", offset),
@@ -117,7 +119,8 @@ pub const Chunk = struct {
     fn constantInstruction(self: *Chunk, name: []const u8, offset: usize) usize {
         const constant = self.code.items[offset + 1];
         std.debug.warn("{} {} ", .{ name, constant });
-        printValue(self.constants.items[constant]);
+        // TODO mixes stdout and stderr in a funny way
+        printValue(self.constants.items[constant]) catch unreachable;
         std.debug.warn("\n", .{});
         return offset + 2;
     }

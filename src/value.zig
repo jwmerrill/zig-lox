@@ -59,6 +59,9 @@ pub fn printValue(boxed: Value) !void {
                 const name = if (obj.asFunction().name) |str| str.bytes else "<script>";
                 try stdout.print("<fn {}>", .{name});
             },
+            .NativeFunction => {
+                try stdout.print("<native fn>", .{});
+            },
         },
     }
 }

@@ -29,8 +29,12 @@ fn div(x: f64, y: f64) f64 {
 pub const CallFrame = struct {
     function: *Obj.Function,
     ip: usize,
-    slots: usize,
+    start: usize,
 };
+
+pub fn clockNative(args: []const Value) Value {
+    return Value{ .Number = @intToFloat(f64, std.time.milliTimestamp()) / 1000 };
+}
 
 pub const VM = struct {
     allocator: *Allocator,
@@ -40,8 +44,8 @@ pub const VM = struct {
     strings: Table,
     globals: Table,
 
-    pub fn init(allocator: *Allocator) VM {
-        return VM{
+    pub fn init(allocator: *Allocator) !VM {
+        var vm = VM{
             .allocator = allocator,
             .frames = std.ArrayList(CallFrame).init(allocator),
             .stack = std.ArrayList(Value).init(allocator),
@@ -49,6 +53,10 @@ pub const VM = struct {
             .strings = Table.init(allocator),
             .globals = Table.init(allocator),
         };
+
+        try vm.defineNative("clock", clockNative);
+
+        return vm;
     }
 
     pub fn deinit(self: *VM) void {
@@ -75,11 +83,7 @@ pub const VM = struct {
 
         const function = try compile(self, source);
         try self.push(function.obj.value());
-        const frame = try self.frames.append(CallFrame{
-            .function = function,
-            .ip = 0,
-            .slots = self.stack.items.len - 1,
-        });
+        try self.callValue(function.obj.value(), 0);
         try self.run();
         // Pop the call frame we put on the stack above
         _ = self.pop();
@@ -91,14 +95,14 @@ pub const VM = struct {
         while (true) {
             if (verbose) {
                 // Print debugging information
-                self.printStack();
+                try self.printStack();
                 _ = self.currentChunk().disassembleInstruction(self.currentFrame().ip);
             }
 
             const instruction = self.readByte();
             const opCode = @intToEnum(OpCode, instruction);
             try self.runOp(opCode);
-            if (opCode == .Return) break;
+            if (opCode == .Return and self.frames.items.len == 0) break;
         }
     }
 
@@ -110,17 +114,25 @@ pub const VM = struct {
 
     fn runOp(self: *VM, opCode: OpCode) !void {
         switch (opCode) {
-            .Return => {},
+            .Return => {
+                const result = self.pop();
+                const frame = self.frames.pop();
+                if (self.frames.items.len == 0) return;
+
+                self.stack.shrink(frame.start);
+
+                try self.push(result);
+            },
             .Pop => {
                 _ = self.pop();
             },
             .GetLocal => {
                 const slot = self.readByte();
-                try self.push(self.stack.items[self.currentFrame().slots + slot]);
+                try self.push(self.stack.items[self.currentFrame().start + slot]);
             },
             .SetLocal => {
                 const slot = self.readByte();
-                self.stack.items[self.currentFrame().slots + slot] = self.peek(0);
+                self.stack.items[self.currentFrame().start + slot] = self.peek(0);
             },
             .GetGlobal => {
                 const name = self.readString();
@@ -160,6 +172,10 @@ pub const VM = struct {
             .Loop => {
                 const offset = self.readShort();
                 self.currentFrame().ip -= offset;
+            },
+            .Call => {
+                const argCount = self.readByte();
+                try self.callValue(self.peek(argCount), argCount);
             },
             .Constant => {
                 const constant = self.readByte();
@@ -239,9 +255,9 @@ pub const VM = struct {
 
     fn concatenate(self: *VM, lhs: *Obj, rhs: *Obj) !void {
         switch (lhs.objType) {
-            .Function => try self.runtimeError("Operands must be strings.", .{}),
+            .Function, .NativeFunction => try self.runtimeError("Operands must be strings.", .{}),
             .String => switch (rhs.objType) {
-                .Function => try self.runtimeError("Operands must be strings.", .{}),
+                .Function, .NativeFunction => try self.runtimeError("Operands must be strings.", .{}),
                 .String => {
                     const lhsStr = lhs.asString();
                     const rhsStr = rhs.asString();
@@ -288,26 +304,85 @@ pub const VM = struct {
         return self.stack.pop();
     }
 
+    fn call(self: *VM, function: *Obj.Function, argCount: usize) !void {
+        if (argCount != function.arity) {
+            return self.runtimeError("Expected {} arguments but got {}.", .{ function.arity, argCount });
+        }
+
+        // NOTE book checks stack length here and overflows if necessary
+
+        try self.frames.append(CallFrame{
+            .function = function,
+            .ip = 0,
+            // Stack position where this call frame begins
+            //
+            // Note, book uses a pointer into the stack called "slots",
+            // but since our stack is resizable, use an index into the
+            // stack instead.
+            .start = self.stack.items.len - argCount - 1,
+        });
+    }
+
+    fn callValue(self: *VM, callee: Value, argCount: usize) !void {
+        switch (callee) {
+            .Bool, .Nil, .Number => {
+                return self.runtimeError("Can only call functions and classes.", .{});
+            },
+            .Obj => |obj| {
+                switch (obj.objType) {
+                    .String => {
+                        return self.runtimeError("Can only call functions and classes.", .{});
+                    },
+                    .Function => try self.call(obj.asFunction(), argCount),
+                    .NativeFunction => {
+                        const args = self.stack.items[self.stack.items.len - 1 - argCount ..];
+                        self.stack.shrink(self.stack.items.len - 1 - argCount);
+                        const result = obj.asNativeFunction().function(args);
+                        try self.push(result);
+                    },
+                }
+            },
+        }
+    }
+
     fn resetStack(self: *VM) void {
         self.stack.shrink(0);
     }
 
-    fn printStack(self: *VM) void {
+    fn printStack(self: *VM) !void {
         std.debug.warn("          ", .{});
         for (self.stack.items) |value| {
             std.debug.warn("[ ", .{});
-            printValue(value);
+            try printValue(value);
             std.debug.warn(" ]", .{});
         }
         std.debug.warn("\n", .{});
     }
 
     fn runtimeError(self: *VM, comptime message: []const u8, args: var) !void {
-        const line = self.currentChunk().lines.items[self.currentFrame().ip];
-
         std.debug.warn(message, args);
-        std.debug.warn("\n[line {}] in script\n", .{line});
+
+        while (self.frames.items.len > 0) {
+            const frame = self.frames.pop();
+            const function = frame.function;
+            const line = function.chunk.lines.items[frame.ip - 1];
+            const name = if (function.name) |str| str.bytes else "<script>";
+            std.debug.warn("\n[line {}] in {}", .{ line, name });
+        }
 
         return error.RuntimeError;
+    }
+
+    fn defineNative(self: *VM, name: []const u8, function: Obj.NativeFunction.NativeFunctionType) !void {
+        const str = try Obj.String.copy(self, name);
+        // NOTE put str on the stack immediately to make sure it doesn't
+        // get garbage collected when we allocate to create the native
+        // function below.
+        try self.push(str.obj.value());
+        const functionValue = (try Obj.NativeFunction.create(self, function)).obj.value();
+        try self.push(functionValue);
+        _ = try self.globals.set(str, functionValue);
+        _ = self.pop();
+        _ = self.pop();
     }
 };
