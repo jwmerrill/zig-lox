@@ -12,7 +12,7 @@ pub const Obj = struct {
         String, Function, NativeFunction
     };
 
-    pub fn create(vm: *VM, objType: Obj.Type) Obj {
+    pub fn create(vm: *VM, objType: Type) Obj {
         return Obj{
             .next = vm.objects,
             .objType = objType,
@@ -39,16 +39,16 @@ pub const Obj = struct {
         return self.objType == .NativeFunction;
     }
 
-    pub fn asString(self: *Obj) *Obj.String {
-        return @fieldParentPtr(Obj.String, "obj", self);
+    pub fn asString(self: *Obj) *String {
+        return @fieldParentPtr(String, "obj", self);
     }
 
-    pub fn asFunction(self: *Obj) *Obj.Function {
-        return @fieldParentPtr(Obj.Function, "obj", self);
+    pub fn asFunction(self: *Obj) *Function {
+        return @fieldParentPtr(Function, "obj", self);
     }
 
-    pub fn asNativeFunction(self: *Obj) *Obj.NativeFunction {
-        return @fieldParentPtr(Obj.NativeFunction, "obj", self);
+    pub fn asNativeFunction(self: *Obj) *NativeFunction {
+        return @fieldParentPtr(NativeFunction, "obj", self);
     }
 
     pub fn value(self: *Obj) Value {
@@ -60,15 +60,15 @@ pub const Obj = struct {
         hash: u32,
         bytes: []const u8,
 
-        pub fn create(vm: *VM, bytes: []const u8) !*Obj.String {
+        pub fn create(vm: *VM, bytes: []const u8) !*String {
             const hash = hashFn(bytes);
 
             if (vm.strings.findString(bytes, hash)) |interned| {
                 vm.allocator.free(bytes);
                 return interned;
             } else {
-                var string = try vm.allocator.create(Obj.String);
-                string.* = Obj.String{
+                var string = try vm.allocator.create(String);
+                string.* = String{
                     .obj = Obj.create(vm, .String),
                     .hash = hash,
                     .bytes = bytes,
@@ -78,13 +78,13 @@ pub const Obj = struct {
             }
         }
 
-        pub fn copy(vm: *VM, source: []const u8) !*Obj.String {
+        pub fn copy(vm: *VM, source: []const u8) !*String {
             const buffer = try vm.allocator.alloc(u8, source.len);
             std.mem.copy(u8, buffer, source);
-            return Obj.String.create(vm, buffer);
+            return String.create(vm, buffer);
         }
 
-        pub fn destroy(self: *Obj.String, vm: *VM) void {
+        pub fn destroy(self: *String, vm: *VM) void {
             vm.allocator.free(self.bytes);
             vm.allocator.destroy(self);
         }
@@ -109,12 +109,12 @@ pub const Obj = struct {
         obj: Obj,
         arity: u8,
         chunk: Chunk,
-        name: ?*Obj.String,
+        name: ?*String,
 
-        pub fn create(vm: *VM) !*Obj.Function {
-            var function = try vm.allocator.create(Obj.Function);
+        pub fn create(vm: *VM) !*Function {
+            var function = try vm.allocator.create(Function);
 
-            function.* = Obj.Function{
+            function.* = Function{
                 .obj = Obj.create(vm, .Function),
                 .arity = 0,
                 .name = null,
@@ -124,7 +124,7 @@ pub const Obj = struct {
             return function;
         }
 
-        pub fn destroy(self: *Obj.Function, vm: *VM) void {
+        pub fn destroy(self: *Function, vm: *VM) void {
             self.chunk.deinit();
             vm.allocator.destroy(self);
 
@@ -139,10 +139,10 @@ pub const Obj = struct {
 
         pub const NativeFunctionType = fn (args: []Value) Value;
 
-        pub fn create(vm: *VM, function: NativeFunctionType) !*Obj.NativeFunction {
-            const out = try vm.allocator.create(Obj.NativeFunction);
+        pub fn create(vm: *VM, function: NativeFunctionType) !*NativeFunction {
+            const out = try vm.allocator.create(NativeFunction);
 
-            out.* = Obj.NativeFunction{
+            out.* = NativeFunction{
                 .obj = Obj.create(vm, .NativeFunction),
                 .function = function,
             };
@@ -150,7 +150,7 @@ pub const Obj = struct {
             return out;
         }
 
-        pub fn destroy(self: *Obj.NativeFunction, fm: *VM) void {
+        pub fn destroy(self: *NativeFunction, fm: *VM) void {
             vm.allocator.destroy(self);
         }
     };
