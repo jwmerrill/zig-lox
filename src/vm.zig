@@ -119,8 +119,7 @@ pub const VM = struct {
                 const frame = self.frames.pop();
                 if (self.frames.items.len == 0) return;
 
-                self.stack.shrink(frame.start);
-
+                try self.stack.resize(frame.start);
                 try self.push(result);
             },
             .Pop => {

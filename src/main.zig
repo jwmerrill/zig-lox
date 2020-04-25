@@ -5,9 +5,18 @@ const Allocator = std.mem.Allocator;
 
 const Chunk = @import("./chunk.zig").Chunk;
 const VM = @import("./vm.zig").VM;
+const debug = @import("./debug.zig");
 
 pub fn main() !void {
-    const allocator = std.testing.allocator;
+    const allocator = init: {
+        if (debug.testingAllocator) {
+            break :init std.testing.allocator;
+        } else {
+            var allocator_mem: [1024 * 1024]u8 = undefined;
+            var allocator_instance = std.heap.FixedBufferAllocator.init(allocator_mem[0..]);
+            break :init &allocator_instance.allocator;
+        }
+    };
 
     const args = try process.argsAlloc(allocator);
     defer process.argsFree(allocator, args);

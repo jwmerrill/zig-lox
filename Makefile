@@ -10,6 +10,10 @@ clean:
 lox:
 	zig build --prefix ./build
 
+.PHONY: fast
+fast:
+	zig build --prefix build -Drelease-fast=true
+
 test: lox
 	mkdir -p craftinginterpreters/build
 	cp build/bin/lox craftinginterpreters/build/cloxd
