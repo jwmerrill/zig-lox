@@ -1,0 +1,13 @@
+var g;
+
+{
+  var a = "hello";
+
+  fun f() {
+    print a;
+  }
+
+  g = f;
+}
+
+g();

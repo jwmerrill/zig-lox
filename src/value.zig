@@ -62,6 +62,13 @@ pub fn printValue(boxed: Value) !void {
             .NativeFunction => {
                 try stdout.print("<native fn>", .{});
             },
+            .Closure => {
+                const name = if (obj.asClosure().function.name) |str| str.bytes else "<script>";
+                try stdout.print("<fn {}>", .{name});
+            },
+            .Upvalue => {
+                try stdout.print("upvalue", .{});
+            },
         },
     }
 }

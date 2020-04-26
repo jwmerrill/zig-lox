@@ -12,11 +12,15 @@ pub const OpCode = enum(u8) {
     GetGlobal,
     DefineGlobal,
     SetGlobal,
+    GetUpvalue,
+    SetUpvalue,
     Print,
     Jump,
     JumpIfFalse,
     Loop,
     Call,
+    Closure,
+    CloseUpvalue,
     Constant,
     Nil,
     True,
@@ -90,11 +94,15 @@ pub const Chunk = struct {
             .GetGlobal => self.constantInstruction("OP_GET_GLOBAL", offset),
             .DefineGlobal => self.constantInstruction("OP_DEFINE_GLOBAL", offset),
             .SetGlobal => self.constantInstruction("OP_SET_GLOBAL", offset),
+            .GetUpvalue => self.byteInstruction("OP_GET_UPVALUE", offset),
+            .SetUpvalue => self.byteInstruction("OP_SET_UPVALUE", offset),
             .Print => self.simpleInstruction("OP_PRINT", offset),
             .Jump => self.jumpInstruction("OP_JUMP", 1, offset),
             .JumpIfFalse => self.jumpInstruction("OP_JUMP_IF_FALSE", 1, offset),
             .Loop => self.jumpInstruction("OP_LOOP", -1, offset),
             .Call => self.byteInstruction("OP_CALL", offset),
+            .Closure => self.closureInstruction("OP_CLOSURE", offset),
+            .CloseUpvalue => self.simpleInstruction("OP_CLOSE_UPVALUE", offset),
             .Constant => self.constantInstruction("OP_CONSTANT", offset),
             .Nil => self.simpleInstruction("OP_NIL", offset),
             .True => self.simpleInstruction("OP_TRUE", offset),
@@ -138,6 +146,29 @@ pub const Chunk = struct {
         const target = @intCast(isize, offset) + 3 + sign * @intCast(isize, jump);
         std.debug.warn("{} {} -> {}\n", .{ name, offset, target });
         return offset + 3;
+    }
+
+    fn closureInstruction(self: *Chunk, name: []const u8, initialOffset: usize) usize {
+        var offset = initialOffset + 1;
+        const constant = self.code.items[offset];
+        offset += 1;
+        std.debug.warn("{} {} ", .{ name, constant });
+        printValue(self.constants.items[constant]) catch unreachable;
+        std.debug.warn("\n", .{});
+
+        // Disassemble upvalues
+        const function = self.constants.items[constant].Obj.asFunction();
+        var i: usize = 0;
+        while (i < function.upvalueCount) : (i += 1) {
+            const isLocal = self.code.items[offset] != 1;
+            const valueType = if (isLocal) "local" else "upvalue";
+            offset += 1;
+            const index = self.code.items[offset];
+            offset += 1;
+            std.debug.warn("{} | {} {}\n", .{ offset - 2, valueType, index});
+        }
+
+        return offset;
     }
 
     pub fn addConstant(self: *Chunk, value: Value) !u8 {

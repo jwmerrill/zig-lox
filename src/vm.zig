@@ -27,7 +27,7 @@ fn div(x: f64, y: f64) f64 {
 }
 
 pub const CallFrame = struct {
-    function: *Obj.Function,
+    closure: *Obj.Closure,
     ip: usize,
     start: usize,
 };
@@ -36,20 +36,30 @@ pub fn clockNative(args: []const Value) Value {
     return Value{ .Number = @intToFloat(f64, std.time.milliTimestamp()) / 1000 };
 }
 
+const STACK_MAX: usize = 1024;
+
 pub const VM = struct {
     allocator: *Allocator,
     frames: ArrayList(CallFrame), // NOTE, book uses a fixed size stack
     stack: ArrayList(Value), // NOTE, book uses a fixed size stack
     objects: ?*Obj,
+    openUpvalues: ?*Obj.Upvalue,
     strings: Table,
     globals: Table,
 
     pub fn init(allocator: *Allocator) !VM {
+        var stack = std.ArrayList(Value).init(allocator);
+        // We need to make sure the stack doesn't actually grow
+        // dynamically so that upvalue pointers into the stack
+        // do not get invalidated
+        try stack.ensureCapacity(STACK_MAX);
+
         var vm = VM{
             .allocator = allocator,
             .frames = std.ArrayList(CallFrame).init(allocator),
-            .stack = std.ArrayList(Value).init(allocator),
+            .stack = stack,
             .objects = null,
+            .openUpvalues = null,
             .strings = Table.init(allocator),
             .globals = Table.init(allocator),
         };
@@ -81,17 +91,23 @@ pub const VM = struct {
         std.debug.assert(self.stack.items.len == 0);
         defer std.debug.assert(self.stack.items.len == 0);
 
+        errdefer self.resetStack();
         const function = try compile(self, source);
         try self.push(function.obj.value());
-        try self.callValue(function.obj.value(), 0);
+
+        // NOTE need the function on the stack when we allocate the
+        // closure so that the GC can see it.
+        const closure = try Obj.Closure.create(self, function);
+        _ = self.pop();
+        try self.push(closure.obj.value());
+
+        try self.callValue(closure.obj.value(), 0);
         try self.run();
-        // Pop the call frame we put on the stack above
+        // Pop the closure we put on the stack above
         _ = self.pop();
     }
 
     fn run(self: *VM) !void {
-        errdefer self.resetStack();
-
         while (true) {
             if (verbose) {
                 // Print debugging information
@@ -117,6 +133,9 @@ pub const VM = struct {
             .Return => {
                 const result = self.pop();
                 const frame = self.frames.pop();
+
+                self.closeUpvalues(&self.stack.items[frame.start]);
+
                 if (self.frames.items.len == 0) return;
 
                 try self.stack.resize(frame.start);
@@ -155,6 +174,18 @@ pub const VM = struct {
                     return self.runtimeError("Undefined variable '{}'.", .{name.bytes});
                 }
             },
+            .GetUpvalue => {
+                const slot = self.readByte();
+                try self.push(self.currentFrame().closure.upvalues[slot].location.*);
+            },
+            .SetUpvalue => {
+                const slot = self.readByte();
+                self.currentFrame().closure.upvalues[slot].location.* = self.peek(0);
+            },
+            .CloseUpvalue => {
+                self.closeUpvalues(&self.stack.items[self.stack.items.len - 2]);
+                _ = self.pop();
+            },
             .Print => {
                 const stdout = std.io.getStdOut().outStream();
                 try printValue(self.pop());
@@ -175,6 +206,29 @@ pub const VM = struct {
             .Call => {
                 const argCount = self.readByte();
                 try self.callValue(self.peek(argCount), argCount);
+            },
+            .Closure => {
+                const constant = self.readByte();
+                const value = self.currentChunk().constants.items[constant];
+                const function = value.Obj.asFunction();
+                const closure = try Obj.Closure.create(self, function);
+                try self.push(closure.obj.value());
+                for (closure.upvalues) |*upvalue| {
+                    const isLocal = self.readByte() != 0;
+                    const index = self.readByte();
+                    if (isLocal) {
+                        // WARNING if the stack is ever resized, this
+                        // pointer into it becomes invalid. We can avoid
+                        // this using ensureCapacity when we create the
+                        // stack, and by making it an error to grow the
+                        // stack past that. Upvalues needing to be able
+                        // to point to either the stack or the heap
+                        // keeps us from growing the stack.
+                        upvalue.* = try self.captureUpvalue(&self.stack.items[self.currentFrame().start + index]);
+                    } else {
+                        upvalue.* = self.currentFrame().closure.upvalues[index];
+                    }
+                }
             },
             .Constant => {
                 const constant = self.readByte();
@@ -254,9 +308,13 @@ pub const VM = struct {
 
     fn concatenate(self: *VM, lhs: *Obj, rhs: *Obj) !void {
         switch (lhs.objType) {
-            .Function, .NativeFunction => try self.runtimeError("Operands must be strings.", .{}),
+            .Function, .NativeFunction, .Closure, .Upvalue => {
+                try self.runtimeError("Operands must be strings.", .{});
+            },
             .String => switch (rhs.objType) {
-                .Function, .NativeFunction => try self.runtimeError("Operands must be strings.", .{}),
+                .Function, .NativeFunction, .Closure, .Upvalue => {
+                    try self.runtimeError("Operands must be strings.", .{});
+                },
                 .String => {
                     const lhsStr = lhs.asString();
                     const rhsStr = rhs.asString();
@@ -274,7 +332,7 @@ pub const VM = struct {
     }
 
     fn currentChunk(self: *VM) *Chunk {
-        return &self.currentFrame().function.chunk;
+        return &self.currentFrame().closure.function.chunk;
     }
 
     fn readByte(self: *VM) u8 {
@@ -292,6 +350,9 @@ pub const VM = struct {
     }
 
     fn push(self: *VM, value: Value) !void {
+        if (self.stack.items.len >= STACK_MAX) {
+            return self.runtimeError("Stack overflow.", .{});
+        }
         try self.stack.append(value);
     }
 
@@ -303,15 +364,16 @@ pub const VM = struct {
         return self.stack.pop();
     }
 
-    fn call(self: *VM, function: *Obj.Function, argCount: usize) !void {
-        if (argCount != function.arity) {
-            return self.runtimeError("Expected {} arguments but got {}.", .{ function.arity, argCount });
+    fn call(self: *VM, closure: *Obj.Closure, argCount: usize) !void {
+        if (argCount != closure.function.arity) {
+            const arity = closure.function.arity;
+            return self.runtimeError("Expected {} arguments but got {}.", .{ arity, argCount });
         }
 
         // NOTE book checks stack length here and overflows if necessary
 
         try self.frames.append(CallFrame{
-            .function = function,
+            .closure = closure,
             .ip = 0,
             // Stack position where this call frame begins
             //
@@ -329,18 +391,54 @@ pub const VM = struct {
             },
             .Obj => |obj| {
                 switch (obj.objType) {
-                    .String => {
+                    .String, .Function, .Upvalue => {
                         return self.runtimeError("Can only call functions and classes.", .{});
                     },
-                    .Function => try self.call(obj.asFunction(), argCount),
+                    .Closure => try self.call(obj.asClosure(), argCount),
                     .NativeFunction => {
                         const args = self.stack.items[self.stack.items.len - 1 - argCount ..];
-                        self.stack.shrink(self.stack.items.len - 1 - argCount);
+                        try self.stack.resize(self.stack.items.len - 1 - argCount);
                         const result = obj.asNativeFunction().function(args);
                         try self.push(result);
                     },
                 }
             },
+        }
+    }
+
+    fn captureUpvalue(self: *VM, local: *Value) !*Obj.Upvalue {
+        var prevUpvalue: ?*Obj.Upvalue = null;
+        var maybeUpvalue = self.openUpvalues;
+
+        while (maybeUpvalue) |upvalue| {
+            if (@ptrToInt(upvalue.location) <= @ptrToInt(local)) break;
+            prevUpvalue = upvalue;
+            maybeUpvalue = upvalue.next;
+        }
+
+        if (maybeUpvalue) |upvalue| {
+            if (upvalue.location == local) return upvalue;
+        }
+
+        const createdUpvalue = try Obj.Upvalue.create(self, local);
+        createdUpvalue.next = maybeUpvalue;
+
+        if (prevUpvalue) |p| {
+            p.next = createdUpvalue;
+        } else {
+            self.openUpvalues = createdUpvalue;
+        }
+
+        return createdUpvalue;
+    }
+
+    fn closeUpvalues(self: *VM, last: *Value) void {
+        while (self.openUpvalues) |openUpvalues| {
+            if (@ptrToInt(openUpvalues.location) < @ptrToInt(last)) break;
+            const upvalue = openUpvalues;
+            upvalue.closed = upvalue.location.*;
+            upvalue.location = &upvalue.closed;
+            self.openUpvalues = upvalue.next;
         }
     }
 
@@ -360,13 +458,14 @@ pub const VM = struct {
 
     fn runtimeError(self: *VM, comptime message: []const u8, args: var) !void {
         std.debug.warn(message, args);
+        std.debug.warn("\n", .{});
 
         while (self.frames.items.len > 0) {
             const frame = self.frames.pop();
-            const function = frame.function;
+            const function = frame.closure.function;
             const line = function.chunk.lines.items[frame.ip - 1];
             const name = if (function.name) |str| str.bytes else "<script>";
-            std.debug.warn("\n[line {}] in {}", .{ line, name });
+            std.debug.warn("[line {}] in {}\n", .{ line, name });
         }
 
         return error.RuntimeError;

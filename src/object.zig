@@ -9,7 +9,7 @@ pub const Obj = struct {
     objType: Type,
 
     pub const Type = enum {
-        String, Function, NativeFunction
+        String, Function, NativeFunction, Closure, Upvalue
     };
 
     pub fn create(vm: *VM, objType: Type) Obj {
@@ -24,6 +24,8 @@ pub const Obj = struct {
             .String => self.asString().destroy(vm),
             .Function => self.asFunction().destroy(vm),
             .NativeFunction => self.asFunction().destroy(vm),
+            .Closure => self.asClosure().destroy(vm),
+            .Upvalue => self.asUpvalue().destroy(vm),
         }
     }
 
@@ -39,6 +41,14 @@ pub const Obj = struct {
         return self.objType == .NativeFunction;
     }
 
+    pub fn isClosure(self: *Obj) bool {
+        return self.objType == .Closure;
+    }
+
+    pub fn isUpvalue(self: *Obj) bool {
+        return self.objType == .Upvalue;
+    }
+
     pub fn asString(self: *Obj) *String {
         return @fieldParentPtr(String, "obj", self);
     }
@@ -49,6 +59,14 @@ pub const Obj = struct {
 
     pub fn asNativeFunction(self: *Obj) *NativeFunction {
         return @fieldParentPtr(NativeFunction, "obj", self);
+    }
+
+    pub fn asClosure(self: *Obj) *Closure {
+        return @fieldParentPtr(Closure, "obj", self);
+    }
+
+    pub fn asUpvalue(self: *Obj) *Upvalue {
+        return @fieldParentPtr(Upvalue, "obj", self);
     }
 
     pub fn value(self: *Obj) Value {
@@ -108,6 +126,7 @@ pub const Obj = struct {
     pub const Function = struct {
         obj: Obj,
         arity: u8,
+        upvalueCount: u8,
         chunk: Chunk,
         name: ?*String,
 
@@ -117,6 +136,7 @@ pub const Obj = struct {
             function.* = Function{
                 .obj = Obj.create(vm, .Function),
                 .arity = 0,
+                .upvalueCount = 0,
                 .name = null,
                 .chunk = Chunk.init(vm.allocator),
             };
@@ -150,7 +170,57 @@ pub const Obj = struct {
             return out;
         }
 
-        pub fn destroy(self: *NativeFunction, fm: *VM) void {
+        pub fn destroy(self: *NativeFunction, vm: *VM) void {
+            vm.allocator.destroy(self);
+        }
+    };
+
+    pub const Closure = struct {
+        obj: Obj,
+        function: *Function,
+        upvalues: []*Upvalue,
+
+        pub fn create(vm: *VM, function: *Function) !*Closure {
+            const out = try vm.allocator.create(Closure);
+            // NOTE book takes care to set each upvalue to null, for "GC reasons".
+            // Can we skip this, since we're saying these pointers can't be null?
+            const upvalues = try vm.allocator.alloc(*Upvalue, function.upvalueCount);
+
+            out.* = Closure{
+                .obj = Obj.create(vm, .Closure),
+                .function = function,
+                .upvalues = upvalues,
+            };
+
+            return out;
+        }
+
+        pub fn destroy(self: *Closure, vm: *VM) void {
+            vm.allocator.free(self.upvalues);
+            vm.allocator.destroy(self);
+        }
+    };
+
+    pub const Upvalue = struct {
+        obj: Obj,
+        location: *Value,
+        closed: Value,
+        next: ?*Upvalue,
+
+        pub fn create(vm: *VM, location: *Value) !*Upvalue {
+            const out = try vm.allocator.create(Upvalue);
+
+            out.* = Upvalue{
+                .obj = Obj.create(vm, .Upvalue),
+                .location = location,
+                .closed = Value.Nil,
+                .next = null,
+            };
+
+            return out;
+        }
+
+        pub fn destroy(self: *Upvalue, vm: *VM) void {
             vm.allocator.destroy(self);
         }
     };

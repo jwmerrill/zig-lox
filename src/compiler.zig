@@ -33,6 +33,11 @@ const FunctionType = enum {
     Function, Script
 };
 
+const Upvalue = struct {
+    index: u8,
+    isLocal: bool,
+};
+
 pub const Compiler = struct {
     // TODO, would be nice to be able to enforce that this is a function
     // object
@@ -40,12 +45,18 @@ pub const Compiler = struct {
     function: *Obj.Function,
     functionType: FunctionType,
     locals: std.ArrayList(Local),
+    upvalues: std.ArrayList(Upvalue),
     scopeDepth: usize,
 
     pub fn init(vm: *VM, functionType: FunctionType, enclosing: ?*Compiler) !Compiler {
         var locals = std.ArrayList(Local).init(vm.allocator);
+
+        // First local is reserved to represent the current function
+        // value on the stack. Give it a name of "" to make sure it
+        // can't actually be referenced by local variables.
         try locals.append(Local{
             .depth = 0,
+            .isCaptured = false,
             .name = "",
         });
 
@@ -57,18 +68,21 @@ pub const Compiler = struct {
             .function = try Obj.Function.create(vm),
             .functionType = functionType,
             .locals = locals,
+            .upvalues = std.ArrayList(Upvalue).init(vm.allocator),
             .scopeDepth = 0,
         };
     }
 
     pub fn deinit(self: *Compiler) void {
         self.locals.deinit();
+        self.upvalues.deinit();
     }
 };
 
 pub const Local = struct {
     name: []const u8,
     depth: isize,
+    isCaptured: bool,
 };
 
 const Precedence = enum(u8) {
@@ -340,7 +354,11 @@ const Parser = struct {
         while (locals.items.len > 0 and
             locals.items[locals.items.len - 1].depth > self.compiler.scopeDepth)
         {
-            try self.emitOp(.Pop);
+            if (locals.items[locals.items.len - 1].isCaptured) {
+                try self.emitOp(.CloseUpvalue);
+            } else {
+                try self.emitOp(.Pop);
+            }
             _ = locals.pop();
         }
     }
@@ -385,7 +403,12 @@ const Parser = struct {
         try self.block();
 
         const fun = try self.end();
-        try self.emitUnaryOp(.Constant, try self.makeConstant(fun.obj.value()));
+        try self.emitUnaryOp(.Closure, try self.makeConstant(fun.obj.value()));
+
+        for (compiler.upvalues.items) |upvalue| {
+            try self.emitByte(if (upvalue.isLocal) 1 else 0);
+            try self.emitByte(upvalue.index);
+        }
     }
 
     pub fn funDeclaration(self: *Parser) !void {
@@ -612,9 +635,31 @@ const Parser = struct {
         try self.addLocal(name);
     }
 
-    pub fn resolveLocal(self: *Parser, name: []const u8) isize {
+    pub fn addUpvalue(self: *Parser, compiler: *Compiler, index: u8, isLocal: bool) !usize {
+        for (compiler.upvalues.items) |upvalue, i| {
+            if (upvalue.index == index and upvalue.isLocal == isLocal) {
+                return i;
+            }
+        }
+
+        if (compiler.upvalues.items.len >= maxInt(u8)) {
+            self.err("Too many closure variables in function.");
+            return 0;
+        }
+
+        try compiler.upvalues.append(Upvalue{
+            .isLocal = isLocal,
+            .index = index,
+        });
+        compiler.function.upvalueCount += 1;
+
+        return compiler.upvalues.items.len - 1;
+    }
+
+    pub fn resolveLocal(self: *Parser, compiler: *Compiler, name: []const u8) isize {
+        var locals = &compiler.locals;
+
         var i: usize = 0;
-        var locals = &self.compiler.locals;
         while (i < locals.items.len) : (i += 1) {
             const local = locals.items[locals.items.len - 1 - i];
             if (std.mem.eql(u8, name, local.name)) {
@@ -628,8 +673,27 @@ const Parser = struct {
         return -1;
     }
 
+    pub fn resolveUpvalue(self: *Parser, compiler: *Compiler, name: []const u8) CompilerErrors!isize {
+        if (compiler.enclosing) |enclosing| {
+            const local = self.resolveLocal(enclosing, name);
+            if (local != -1) {
+                enclosing.locals.items[@intCast(u8, local)].isCaptured = true;
+                const index = try self.addUpvalue(compiler, @intCast(u8, local), true);
+                return @intCast(isize, index);
+            }
+
+            const upvalue = try self.resolveUpvalue(enclosing, name);
+            if (upvalue != -1) {
+                const index = try self.addUpvalue(compiler, @intCast(u8, upvalue), false);
+                return @intCast(isize, index);
+            }
+        }
+
+        return -1;
+    }
+
     pub fn addLocal(self: *Parser, name: []const u8) !void {
-        if (self.compiler.locals.items.len > maxInt(u8)) {
+        if (self.compiler.locals.items.len >= maxInt(u8)) {
             self.err("Too many local variables in function.");
             return;
         }
@@ -637,6 +701,7 @@ const Parser = struct {
         const local = Local{
             .name = name,
             .depth = -1,
+            .isCaptured = false,
         };
         try self.compiler.locals.append(local);
     }
@@ -728,16 +793,23 @@ const Parser = struct {
         var getOp: OpCode = undefined;
         var setOp: OpCode = undefined;
         var arg: u8 = undefined;
-        var resolvedArg = self.resolveLocal(name);
+        var resolvedArg = self.resolveLocal(self.compiler, name);
 
-        if (resolvedArg == -1) {
-            arg = try self.identifierConstant(name);
-            getOp = .GetGlobal;
-            setOp = .SetGlobal;
-        } else {
+        if (resolvedArg != -1) {
             arg = @intCast(u8, resolvedArg);
             getOp = .GetLocal;
             setOp = .SetLocal;
+        } else {
+            const maybeArg = try self.resolveUpvalue(self.compiler, name);
+            if (maybeArg != -1) {
+                arg = @intCast(u8, maybeArg);
+                getOp = .GetUpvalue;
+                setOp = .SetUpvalue;
+            } else {
+                arg = try self.identifierConstant(name);
+                getOp = .GetGlobal;
+                setOp = .SetGlobal;
+            }
         }
 
         if (canAssign and self.match(.Equal)) {
