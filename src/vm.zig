@@ -58,7 +58,7 @@ pub const VM = struct {
             .objects = null,
             .openUpvalues = null,
             .strings = undefined,
-            .globals = undefined
+            .globals = undefined,
         };
     }
 

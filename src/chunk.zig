@@ -165,7 +165,7 @@ pub const Chunk = struct {
             offset += 1;
             const index = self.code.items[offset];
             offset += 1;
-            std.debug.warn("{} | {} {}\n", .{ offset - 2, valueType, index});
+            std.debug.warn("{} | {} {}\n", .{ offset - 2, valueType, index });
         }
 
         return offset;

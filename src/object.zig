@@ -3,6 +3,7 @@ const Allocator = std.mem.Allocator;
 const Value = @import("./value.zig").Value;
 const VM = @import("./vm.zig").VM;
 const Chunk = @import("./chunk.zig").Chunk;
+const debug = @import("./debug.zig");
 
 pub const Obj = struct {
     next: ?*Obj,
@@ -12,18 +13,32 @@ pub const Obj = struct {
         String, Function, NativeFunction, Closure, Upvalue
     };
 
-    pub fn create(vm: *VM, objType: Type) Obj {
-        return Obj{
+    pub fn allocate(vm: *VM, comptime T: type, objType: Type) !*Obj {
+        const ptr = try vm.allocator.create(T);
+
+        ptr.obj = Obj{
             .next = vm.objects,
             .objType = objType,
         };
+
+        vm.objects = &ptr.obj;
+
+        if (debug.LOG_GC) {
+            std.debug.warn("{} allocate {} for {}\n", .{ @ptrToInt(&ptr.obj), @sizeOf(T), @typeName(T) });
+        }
+
+        return &ptr.obj;
     }
 
     pub fn destroy(self: *Obj, vm: *VM) void {
+        if (debug.LOG_GC) {
+            std.debug.warn("{} free type {}\n", .{ @ptrToInt(self), self.objType });
+        }
+
         switch (self.objType) {
             .String => self.asString().destroy(vm),
             .Function => self.asFunction().destroy(vm),
-            .NativeFunction => self.asFunction().destroy(vm),
+            .NativeFunction => self.asNativeFunction().destroy(vm),
             .Closure => self.asClosure().destroy(vm),
             .Upvalue => self.asUpvalue().destroy(vm),
         }
@@ -85,14 +100,15 @@ pub const Obj = struct {
                 vm.allocator.free(bytes);
                 return interned;
             } else {
-                var string = try vm.allocator.create(String);
-                string.* = String{
-                    .obj = Obj.create(vm, .String),
+                const obj = try Obj.allocate(vm, String, .String);
+                const out = obj.asString();
+                out.* = String{
+                    .obj = obj.*,
                     .hash = hash,
                     .bytes = bytes,
                 };
-                _ = try vm.strings.set(string, Value{ .Bool = true });
-                return string;
+                _ = try vm.strings.set(out, Value{ .Bool = true });
+                return out;
             }
         }
 
@@ -131,17 +147,18 @@ pub const Obj = struct {
         name: ?*String,
 
         pub fn create(vm: *VM) !*Function {
-            var function = try vm.allocator.create(Function);
+            const obj = try Obj.allocate(vm, Function, .Function);
+            const out = obj.asFunction();
 
-            function.* = Function{
-                .obj = Obj.create(vm, .Function),
+            out.* = Function{
+                .obj = obj.*,
                 .arity = 0,
                 .upvalueCount = 0,
                 .name = null,
                 .chunk = Chunk.init(vm.allocator),
             };
 
-            return function;
+            return out;
         }
 
         pub fn destroy(self: *Function, vm: *VM) void {
@@ -160,10 +177,12 @@ pub const Obj = struct {
         pub const NativeFunctionType = fn (args: []Value) Value;
 
         pub fn create(vm: *VM, function: NativeFunctionType) !*NativeFunction {
-            const out = try vm.allocator.create(NativeFunction);
+            const obj = try Obj.allocate(vm, NativeFunction, .NativeFunction);
+
+            const out = obj.asNativeFunction();
 
             out.* = NativeFunction{
-                .obj = Obj.create(vm, .NativeFunction),
+                .obj = obj.*,
                 .function = function,
             };
 
@@ -181,13 +200,15 @@ pub const Obj = struct {
         upvalues: []*Upvalue,
 
         pub fn create(vm: *VM, function: *Function) !*Closure {
-            const out = try vm.allocator.create(Closure);
             // NOTE book takes care to set each upvalue to null, for "GC reasons".
             // Can we skip this, since we're saying these pointers can't be null?
             const upvalues = try vm.allocator.alloc(*Upvalue, function.upvalueCount);
 
+            const obj = try Obj.allocate(vm, Closure, .Closure);
+            const out = obj.asClosure();
+
             out.* = Closure{
-                .obj = Obj.create(vm, .Closure),
+                .obj = obj.*,
                 .function = function,
                 .upvalues = upvalues,
             };
@@ -208,10 +229,11 @@ pub const Obj = struct {
         next: ?*Upvalue,
 
         pub fn create(vm: *VM, location: *Value) !*Upvalue {
-            const out = try vm.allocator.create(Upvalue);
+            const obj = try Obj.allocate(vm, Upvalue, .Upvalue);
+            const out = obj.asUpvalue();
 
             out.* = Upvalue{
-                .obj = Obj.create(vm, .Upvalue),
+                .obj = obj.*,
                 .location = location,
                 .closed = Value.Nil,
                 .next = null,
