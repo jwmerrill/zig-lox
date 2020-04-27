@@ -9,6 +9,7 @@ const compile = @import("./compiler.zig").compile;
 const debug = @import("./debug.zig");
 const Obj = @import("./object.zig").Obj;
 const Table = @import("./table.zig").Table;
+const GCAllocator = @import("./memory.zig").GCAllocator;
 
 fn add(x: f64, y: f64) f64 {
     return x + y;
@@ -39,6 +40,7 @@ pub fn clockNative(args: []const Value) Value {
 const STACK_MAX: usize = 1024;
 
 pub const VM = struct {
+    gcAllocatorInstance: GCAllocator,
     allocator: *Allocator,
     frames: ArrayList(CallFrame), // NOTE, book uses a fixed size stack
     stack: ArrayList(Value), // NOTE, book uses a fixed size stack
@@ -47,26 +49,38 @@ pub const VM = struct {
     strings: Table,
     globals: Table,
 
-    pub fn init(allocator: *Allocator) !VM {
-        var stack = std.ArrayList(Value).init(allocator);
+    pub fn create() VM {
+        return VM{
+            .gcAllocatorInstance = undefined,
+            .allocator = undefined,
+            .frames = undefined,
+            .stack = undefined,
+            .objects = null,
+            .openUpvalues = null,
+            .strings = undefined,
+            .globals = undefined
+        };
+    }
+
+    pub fn init(self: *VM, backingAllocator: *Allocator) !void {
+        self.gcAllocatorInstance = GCAllocator.init(self, backingAllocator);
+        const allocator = &self.gcAllocatorInstance.allocator;
+
+        // Note, we can tell none of this allocates because none of
+        // these operations can fail, and allocation can always fail
+        // with error.OutOfMemory
+        self.allocator = allocator;
+        self.frames = std.ArrayList(CallFrame).init(allocator);
+        self.stack = std.ArrayList(Value).init(allocator);
+        self.strings = Table.init(allocator);
+        self.globals = Table.init(allocator);
+
         // We need to make sure the stack doesn't actually grow
         // dynamically so that upvalue pointers into the stack
         // do not get invalidated
-        try stack.ensureCapacity(STACK_MAX);
+        try self.stack.ensureCapacity(STACK_MAX);
 
-        var vm = VM{
-            .allocator = allocator,
-            .frames = std.ArrayList(CallFrame).init(allocator),
-            .stack = stack,
-            .objects = null,
-            .openUpvalues = null,
-            .strings = Table.init(allocator),
-            .globals = Table.init(allocator),
-        };
-
-        try vm.defineNative("clock", clockNative);
-
-        return vm;
+        try self.defineNative("clock", clockNative);
     }
 
     pub fn deinit(self: *VM) void {
