@@ -10,7 +10,7 @@ const Chunk = @import("./chunk.zig").Chunk;
 const OpCode = @import("./chunk.zig").OpCode;
 const Value = @import("./value.zig").Value;
 const Obj = @import("./object.zig").Obj;
-const verbose = @import("./debug.zig").verbose;
+const debug = @import("./debug.zig");
 
 // Note, the compiler allocates objects as part of parsing that must be
 // freed by the caller.
@@ -286,7 +286,7 @@ const Parser = struct {
     pub fn end(self: *Parser) !*Obj.Function {
         try self.emitReturn();
 
-        if (verbose) {
+        if (debug.PRINT_CODE) {
             if (!self.hadError) {
                 const maybeName = self.compiler.function.name;
                 const name = if (maybeName) |o| o.bytes else "<script>";

@@ -9,7 +9,7 @@ const debug = @import("./debug.zig");
 
 pub fn main() !void {
     const allocator = init: {
-        if (debug.testingAllocator) {
+        if (debug.TESTING_ALLOCATOR) {
             break :init std.testing.allocator;
         } else {
             var allocator_mem: [1024 * 1024]u8 = undefined;

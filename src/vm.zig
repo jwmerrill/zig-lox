@@ -6,7 +6,7 @@ const OpCode = @import("./chunk.zig").OpCode;
 const Value = @import("./value.zig").Value;
 const printValue = @import("./value.zig").printValue;
 const compile = @import("./compiler.zig").compile;
-const verbose = @import("./debug.zig").verbose;
+const debug = @import("./debug.zig");
 const Obj = @import("./object.zig").Obj;
 const Table = @import("./table.zig").Table;
 
@@ -109,7 +109,7 @@ pub const VM = struct {
 
     fn run(self: *VM) !void {
         while (true) {
-            if (verbose) {
+            if (debug.TRACE_EXECUTION) {
                 // Print debugging information
                 try self.printStack();
                 _ = self.currentChunk().disassembleInstruction(self.currentFrame().ip);
