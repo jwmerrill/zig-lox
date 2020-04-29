@@ -10,7 +10,7 @@ const debug = @import("./debug.zig");
 pub fn main() !void {
     const allocator = init: {
         if (debug.TESTING_ALLOCATOR) {
-            defer std.testing.allocator_instance.validate() catch std.debug.panic("", .{});
+            defer std.testing.allocator_instance.validate() catch unreachable;
             break :init std.testing.allocator;
         } else {
             var allocator_mem: [1024 * 1024]u8 = undefined;

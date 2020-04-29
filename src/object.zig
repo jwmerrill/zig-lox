@@ -8,6 +8,7 @@ const debug = @import("./debug.zig");
 pub const Obj = struct {
     next: ?*Obj,
     objType: Type,
+    isMarked: bool,
 
     pub const Type = enum {
         String, Function, NativeFunction, Closure, Upvalue
@@ -19,6 +20,7 @@ pub const Obj = struct {
         ptr.obj = Obj{
             .next = vm.objects,
             .objType = objType,
+            .isMarked = false,
         };
 
         vm.objects = &ptr.obj;
@@ -107,7 +109,11 @@ pub const Obj = struct {
                     .hash = hash,
                     .bytes = bytes,
                 };
+                // Make sure string is visible to the GC, since adding
+                // to the table may allocate
+                try vm.push(out.obj.value());
                 _ = try vm.strings.set(out, Value{ .Bool = true });
+                _ = vm.pop();
                 return out;
             }
         }
@@ -197,12 +203,14 @@ pub const Obj = struct {
     pub const Closure = struct {
         obj: Obj,
         function: *Function,
-        upvalues: []*Upvalue,
+        upvalues: []?*Upvalue,
 
         pub fn create(vm: *VM, function: *Function) !*Closure {
-            // NOTE book takes care to set each upvalue to null, for "GC reasons".
-            // Can we skip this, since we're saying these pointers can't be null?
-            const upvalues = try vm.allocator.alloc(*Upvalue, function.upvalueCount);
+            const upvalues = try vm.allocator.alloc(?*Upvalue, function.upvalueCount);
+            // Need to null this out rather than leaving it
+            // uninitialized becaue the GC might try to look at it
+            // before it gets filled in with values
+            for (upvalues) |*upvalue| upvalue.* = null;
 
             const obj = try Obj.allocate(vm, Closure, .Closure);
             const out = obj.asClosure();

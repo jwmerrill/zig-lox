@@ -16,8 +16,15 @@ const debug = @import("./debug.zig");
 // freed by the caller.
 pub fn compile(vm: *VM, source: []const u8) !*Obj.Function {
     var compiler = try Compiler.init(vm, .Script, null);
+    defer compiler.deinit();
+
     var parser = try Parser.init(vm, &compiler, source);
-    defer parser.deinit();
+
+    // Register the parser with the VM. Need to do this so that the
+    // garbage collector can reach the parser's current compiler.
+    vm.parser = &parser;
+    defer vm.parser = null;
+
     parser.advance();
     while (!parser.match(.Eof)) {
         try parser.declaration();
@@ -138,7 +145,7 @@ fn getPrecedence(tokenType: TokenType) Precedence {
     };
 }
 
-const Parser = struct {
+pub const Parser = struct {
     vm: *VM,
     scanner: Scanner,
     current: Token,
@@ -157,10 +164,6 @@ const Parser = struct {
             .panicMode = false,
             .compiler = compiler,
         };
-    }
-
-    pub fn deinit(self: *Parser) void {
-        self.compiler.deinit();
     }
 
     pub fn currentChunk(self: *Parser) *Chunk {
@@ -298,11 +301,17 @@ const Parser = struct {
         if (self.compiler.enclosing) |compiler| {
             self.compiler = compiler;
         }
+
         return fun;
     }
 
     pub fn makeConstant(self: *Parser, value: Value) !u8 {
+        // Make sure value is visible to the GC while addConstant
+        // allocates
+        try self.vm.push(value);
         const constant = try self.currentChunk().addConstant(value);
+        _ = self.vm.pop();
+
         if (constant > maxInt(u8)) {
             self.err("Too many constants in one chunk.");
             return 0;
@@ -377,6 +386,7 @@ const Parser = struct {
 
     pub fn function(self: *Parser, functionType: FunctionType) !void {
         var compiler = try Compiler.init(self.vm, functionType, self.compiler);
+        defer compiler.deinit();
         self.compiler = &compiler;
         self.compiler.function.name = try Obj.String.copy(self.vm, self.previous.lexeme);
         self.beginScope();

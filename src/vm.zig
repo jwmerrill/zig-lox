@@ -6,6 +6,7 @@ const OpCode = @import("./chunk.zig").OpCode;
 const Value = @import("./value.zig").Value;
 const printValue = @import("./value.zig").printValue;
 const compile = @import("./compiler.zig").compile;
+const Parser = @import("./compiler.zig").Parser;
 const debug = @import("./debug.zig");
 const Obj = @import("./object.zig").Obj;
 const Table = @import("./table.zig").Table;
@@ -48,6 +49,8 @@ pub const VM = struct {
     openUpvalues: ?*Obj.Upvalue,
     strings: Table,
     globals: Table,
+    parser: ?*Parser,
+    grayStack: ArrayList(*Obj),
 
     pub fn create() VM {
         return VM{
@@ -59,6 +62,8 @@ pub const VM = struct {
             .openUpvalues = null,
             .strings = undefined,
             .globals = undefined,
+            .parser = null,
+            .grayStack = undefined,
         };
     }
 
@@ -74,6 +79,9 @@ pub const VM = struct {
         self.stack = std.ArrayList(Value).init(allocator);
         self.strings = Table.init(allocator);
         self.globals = Table.init(allocator);
+        // Note, purposely uses the backing allocator to avoid having
+        // growing the grayStack during GC kick off more GC.
+        self.grayStack = std.ArrayList(*Obj).init(backingAllocator);
 
         // We need to make sure the stack doesn't actually grow
         // dynamically so that upvalue pointers into the stack
@@ -88,6 +96,7 @@ pub const VM = struct {
         self.strings.deinit();
         self.globals.deinit();
         self.stack.deinit();
+        self.grayStack.deinit();
     }
 
     pub fn freeObjects(self: *VM) void {
@@ -190,11 +199,13 @@ pub const VM = struct {
             },
             .GetUpvalue => {
                 const slot = self.readByte();
-                try self.push(self.currentFrame().closure.upvalues[slot].location.*);
+                // Upvalues are guaranteed to be filled in by the time we get here
+                try self.push(self.currentFrame().closure.upvalues[slot].?.location.*);
             },
             .SetUpvalue => {
                 const slot = self.readByte();
-                self.currentFrame().closure.upvalues[slot].location.* = self.peek(0);
+                // Upvalues are guaranteed to be filled in by the time we get here
+                self.currentFrame().closure.upvalues[slot].?.location.* = self.peek(0);
             },
             .CloseUpvalue => {
                 self.closeUpvalues(&self.stack.items[self.stack.items.len - 2]);
@@ -330,11 +341,17 @@ pub const VM = struct {
                     try self.runtimeError("Operands must be strings.", .{});
                 },
                 .String => {
+                    // Temporarily put the strings back on the stack so
+                    // they're visible to the GC when we allocate
+                    try self.push(lhs.value());
+                    try self.push(rhs.value());
                     const lhsStr = lhs.asString();
                     const rhsStr = rhs.asString();
                     const buffer = try self.allocator.alloc(u8, lhsStr.bytes.len + rhsStr.bytes.len);
                     std.mem.copy(u8, buffer[0..lhsStr.bytes.len], lhsStr.bytes);
                     std.mem.copy(u8, buffer[lhsStr.bytes.len..], rhsStr.bytes);
+                    _ = self.pop();
+                    _ = self.pop();
                     try self.push((try Obj.String.create(self, buffer)).obj.value());
                 },
             },
@@ -365,7 +382,11 @@ pub const VM = struct {
 
     fn push(self: *VM, value: Value) !void {
         if (self.stack.items.len >= STACK_MAX) {
-            return self.runtimeError("Stack overflow.", .{});
+            // Cast this to an OutOfMemory error instead of a
+            // runtime error because the compiler pushes things onto the
+            // stack for GC visibility but doesn't expect to deal with
+            // RuntimeError.
+            return self.runtimeError("Stack overflow.", .{}) catch error.OutOfMemory;
         }
         try self.stack.append(value);
     }
