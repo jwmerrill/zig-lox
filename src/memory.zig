@@ -26,7 +26,7 @@ pub const GCAllocator = struct {
             },
             .backing_allocator = backing_allocator,
             .bytesAllocated = 0,
-            .nextGC = 1024*1024,
+            .nextGC = 1024 * 1024,
         };
     }
 
@@ -161,6 +161,15 @@ pub const GCAllocator = struct {
                         try self.markObject(&upvalue.obj);
                     }
                 }
+            },
+            .Class => {
+                const class = obj.asClass();
+                try self.markObject(&class.name.obj);
+            },
+            .Instance => {
+                const instance = obj.asInstance();
+                try self.markObject(&instance.class.obj);
+                try self.markTable(&instance.fields);
             },
             .NativeFunction, .String => {},
         }

@@ -69,6 +69,12 @@ pub fn printValue(boxed: Value) !void {
             .Upvalue => {
                 try stdout.print("upvalue", .{});
             },
+            .Class => {
+                try stdout.print("{}", .{obj.asClass().name.bytes});
+            },
+            .Instance => {
+                try stdout.print("{} instance", .{obj.asInstance().class.name.bytes});
+            },
         },
     }
 }

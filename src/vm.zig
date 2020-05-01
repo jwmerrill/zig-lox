@@ -207,9 +207,64 @@ pub const VM = struct {
                 // Upvalues are guaranteed to be filled in by the time we get here
                 self.currentFrame().closure.upvalues[slot].?.location.* = self.peek(0);
             },
+            .GetProperty => {
+                const maybeObj = self.peek(0);
+
+                switch (maybeObj) {
+                    .Number, .Bool, .Nil => {
+                        return self.runtimeError("Only instances have properties.", .{});
+                    },
+                    .Obj => |obj| {
+                        switch (obj.objType) {
+                            .String, .Function, .NativeFunction, .Closure, .Upvalue, .Class => {
+                                return self.runtimeError("Only instances have properties.", .{});
+                            },
+                            .Instance => {
+                                const instance = obj.asInstance();
+                                const name = self.readString();
+
+                                var value: Value = undefined;
+                                if (instance.fields.get(name, &value)) {
+                                    _ = self.pop(); // Instance.
+                                    try self.push(value);
+                                } else {
+                                    return self.runtimeError("Undefined property '{}'.", .{name.bytes});
+                                }
+                            },
+                        }
+                    },
+                }
+            },
+            .SetProperty => {
+                const maybeObj = self.peek(1);
+
+                switch (maybeObj) {
+                    .Number, .Bool, .Nil => {
+                        return self.runtimeError("Only instances have properties.", .{});
+                    },
+                    .Obj => |obj| {
+                        switch (obj.objType) {
+                            .String, .Function, .NativeFunction, .Closure, .Upvalue, .Class => {
+                                return self.runtimeError("Only instances have properties.", .{});
+                            },
+                            .Instance => {
+                                const instance = obj.asInstance();
+                                _ = try instance.fields.set(self.readString(), self.peek(0));
+
+                                const value = self.pop();
+                                _ = self.pop();
+                                try self.push(value);
+                            },
+                        }
+                    },
+                }
+            },
             .CloseUpvalue => {
                 self.closeUpvalues(&self.stack.items[self.stack.items.len - 2]);
                 _ = self.pop();
+            },
+            .Class => {
+                try self.push((try Obj.Class.create(self, self.readString())).obj.value());
             },
             .Print => {
                 const stdout = std.io.getStdOut().outStream();
@@ -333,11 +388,11 @@ pub const VM = struct {
 
     fn concatenate(self: *VM, lhs: *Obj, rhs: *Obj) !void {
         switch (lhs.objType) {
-            .Function, .NativeFunction, .Closure, .Upvalue => {
+            .Function, .NativeFunction, .Closure, .Upvalue, .Class, .Instance => {
                 try self.runtimeError("Operands must be strings.", .{});
             },
             .String => switch (rhs.objType) {
-                .Function, .NativeFunction, .Closure, .Upvalue => {
+                .Function, .NativeFunction, .Closure, .Upvalue, .Class, .Instance => {
                     try self.runtimeError("Operands must be strings.", .{});
                 },
                 .String => {
@@ -426,7 +481,7 @@ pub const VM = struct {
             },
             .Obj => |obj| {
                 switch (obj.objType) {
-                    .String, .Function, .Upvalue => {
+                    .String, .Function, .Upvalue, .Instance => {
                         return self.runtimeError("Can only call functions and classes.", .{});
                     },
                     .Closure => try self.call(obj.asClosure(), argCount),
@@ -435,6 +490,11 @@ pub const VM = struct {
                         try self.stack.resize(self.stack.items.len - 1 - argCount);
                         const result = obj.asNativeFunction().function(args);
                         try self.push(result);
+                    },
+                    .Class => {
+                        const args = self.stack.items[self.stack.items.len - 1 - argCount ..];
+                        try self.stack.resize(self.stack.items.len - 1 - argCount);
+                        try self.push((try Obj.Instance.create(self, obj.asClass())).obj.value());
                     },
                 }
             },

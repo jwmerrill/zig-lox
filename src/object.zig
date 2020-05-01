@@ -4,6 +4,7 @@ const Value = @import("./value.zig").Value;
 const VM = @import("./vm.zig").VM;
 const Chunk = @import("./chunk.zig").Chunk;
 const debug = @import("./debug.zig");
+const Table = @import("./table.zig").Table;
 
 pub const Obj = struct {
     next: ?*Obj,
@@ -11,7 +12,7 @@ pub const Obj = struct {
     isMarked: bool,
 
     pub const Type = enum {
-        String, Function, NativeFunction, Closure, Upvalue
+        String, Function, NativeFunction, Closure, Upvalue, Class, Instance
     };
 
     pub fn allocate(vm: *VM, comptime T: type, objType: Type) !*Obj {
@@ -43,6 +44,8 @@ pub const Obj = struct {
             .NativeFunction => self.asNativeFunction().destroy(vm),
             .Closure => self.asClosure().destroy(vm),
             .Upvalue => self.asUpvalue().destroy(vm),
+            .Class => self.asClass().destroy(vm),
+            .Instance => self.asInstance().destroy(vm),
         }
     }
 
@@ -66,6 +69,14 @@ pub const Obj = struct {
         return self.objType == .Upvalue;
     }
 
+    pub fn isClass(self: *Obj) bool {
+        return self.objType == .Class;
+    }
+
+    pub fn isInstance(self: *Obj) bool {
+        return self.objType == .Instance;
+    }
+
     pub fn asString(self: *Obj) *String {
         return @fieldParentPtr(String, "obj", self);
     }
@@ -84,6 +95,14 @@ pub const Obj = struct {
 
     pub fn asUpvalue(self: *Obj) *Upvalue {
         return @fieldParentPtr(Upvalue, "obj", self);
+    }
+
+    pub fn asClass(self: *Obj) *Class {
+        return @fieldParentPtr(Class, "obj", self);
+    }
+
+    pub fn asInstance(self: *Obj) *Instance {
+        return @fieldParentPtr(Instance, "obj", self);
     }
 
     pub fn value(self: *Obj) Value {
@@ -170,9 +189,6 @@ pub const Obj = struct {
         pub fn destroy(self: *Function, vm: *VM) void {
             self.chunk.deinit();
             vm.allocator.destroy(self);
-
-            // TODO, do we need to free name also, or will the GC take care
-            // of that for us?
         }
     };
 
@@ -251,6 +267,51 @@ pub const Obj = struct {
         }
 
         pub fn destroy(self: *Upvalue, vm: *VM) void {
+            vm.allocator.destroy(self);
+        }
+    };
+
+    pub const Class = struct {
+        obj: Obj,
+        name: *String,
+
+        pub fn create(vm: *VM, name: *String) !*Class {
+            const obj = try Obj.allocate(vm, Class, .Class);
+            const out = obj.asClass();
+
+            out.* = Class{
+                .obj = obj.*,
+                .name = name,
+            };
+
+            return out;
+        }
+
+        pub fn destroy(self: *Class, vm: *VM) void {
+            vm.allocator.destroy(self);
+        }
+    };
+
+    pub const Instance = struct {
+        obj: Obj,
+        class: *Class,
+        fields: Table,
+
+        pub fn create(vm: *VM, class: *Class) !*Instance {
+            const obj = try Obj.allocate(vm, Instance, .Instance);
+            const out = obj.asInstance();
+
+            out.* = Instance{
+                .obj = obj.*,
+                .class = class,
+                .fields = Table.init(vm.allocator),
+            };
+
+            return out;
+        }
+
+        pub fn destroy(self: *Instance, vm: *VM) void {
+            self.fields.deinit();
             vm.allocator.destroy(self);
         }
     };

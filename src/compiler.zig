@@ -321,7 +321,9 @@ pub const Parser = struct {
     }
 
     pub fn declaration(self: *Parser) !void {
-        if (self.match(.Fun)) {
+        if (self.match(.Class)) {
+            try self.classDeclaration();
+        } else if (self.match(.Fun)) {
             try self.funDeclaration();
         } else if (self.match(.Var)) {
             try self.varDeclaration();
@@ -419,6 +421,18 @@ pub const Parser = struct {
             try self.emitByte(if (upvalue.isLocal) 1 else 0);
             try self.emitByte(upvalue.index);
         }
+    }
+
+    pub fn classDeclaration(self: *Parser) !void {
+        self.consume(.Identifier, "Expect class name.");
+        const nameConstant = try self.identifierConstant(self.previous.lexeme);
+        try self.declareVariable();
+
+        try self.emitUnaryOp(.Class, nameConstant);
+        try self.defineVariable(nameConstant);
+
+        self.consume(.LeftBrace, "Expect '{' before class body.");
+        self.consume(.RightBrace, "Expect '}' after class body.");
     }
 
     pub fn funDeclaration(self: *Parser) !void {
@@ -746,8 +760,8 @@ pub const Parser = struct {
             // Single-character tokens.
             .Minus, .Plus, .Slash, .Star => try self.binary(),
             .LeftParen => try self.call(),
-            .RightParen, .LeftBrace, .RightBrace, .Comma, .Dot => self.infixError(),
-            .Semicolon => self.infixError(),
+            .Dot => try self.dot(canAssign),
+            .RightParen, .LeftBrace, .RightBrace, .Comma, .Semicolon => self.infixError(),
 
             // One or two character tokens.
             .BangEqual, .EqualEqual, .Greater, .GreaterEqual => try self.binary(),
@@ -883,6 +897,18 @@ pub const Parser = struct {
     pub fn call(self: *Parser) !void {
         const argCount = try self.argumentList();
         try self.emitUnaryOp(.Call, argCount);
+    }
+
+    pub fn dot(self: *Parser, canAssign: bool) !void {
+        self.consume(.Identifier, "Expect property name after '.'.");
+        const name = try self.identifierConstant(self.previous.lexeme);
+
+        if (canAssign and self.match(.Equal)) {
+            try self.expression();
+            try self.emitUnaryOp(.SetProperty, name);
+        } else {
+            try self.emitUnaryOp(.GetProperty, name);
+        }
     }
 
     pub fn argumentList(self: *Parser) !u8 {
