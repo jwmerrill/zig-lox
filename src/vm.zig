@@ -48,12 +48,13 @@ pub const VM = struct {
     objects: ?*Obj,
     openUpvalues: ?*Obj.Upvalue,
     strings: Table,
+    initString: ?*Obj.String,
     globals: Table,
     parser: ?*Parser,
     grayStack: ArrayList(*Obj),
 
     pub fn create() VM {
-        return VM{
+        var vm = VM{
             .gcAllocatorInstance = undefined,
             .allocator = undefined,
             .frames = undefined,
@@ -61,10 +62,13 @@ pub const VM = struct {
             .objects = null,
             .openUpvalues = null,
             .strings = undefined,
+            .initString = null,
             .globals = undefined,
             .parser = null,
             .grayStack = undefined,
         };
+
+        return vm;
     }
 
     pub fn init(self: *VM, backingAllocator: *Allocator) !void {
@@ -78,6 +82,7 @@ pub const VM = struct {
         self.frames = std.ArrayList(CallFrame).init(allocator);
         self.stack = std.ArrayList(Value).init(allocator);
         self.strings = Table.init(allocator);
+        self.initString = try Obj.String.copy(self, "init");
         self.globals = Table.init(allocator);
         // Note, purposely uses the backing allocator to avoid having
         // growing the grayStack during GC kick off more GC.
@@ -92,6 +97,7 @@ pub const VM = struct {
     }
 
     pub fn deinit(self: *VM) void {
+        self.initString = null;
         self.freeObjects();
         self.strings.deinit();
         self.globals.deinit();
@@ -216,7 +222,7 @@ pub const VM = struct {
                     },
                     .Obj => |obj| {
                         switch (obj.objType) {
-                            .String, .Function, .NativeFunction, .Closure, .Upvalue, .Class => {
+                            .String, .Function, .NativeFunction, .Closure, .Upvalue, .Class, .BoundMethod => {
                                 return self.runtimeError("Only instances have properties.", .{});
                             },
                             .Instance => {
@@ -228,7 +234,7 @@ pub const VM = struct {
                                     _ = self.pop(); // Instance.
                                     try self.push(value);
                                 } else {
-                                    return self.runtimeError("Undefined property '{}'.", .{name.bytes});
+                                    try self.bindMethod(instance.class, name);
                                 }
                             },
                         }
@@ -240,12 +246,12 @@ pub const VM = struct {
 
                 switch (maybeObj) {
                     .Number, .Bool, .Nil => {
-                        return self.runtimeError("Only instances have properties.", .{});
+                        return self.runtimeError("Only instances have fields.", .{});
                     },
                     .Obj => |obj| {
                         switch (obj.objType) {
-                            .String, .Function, .NativeFunction, .Closure, .Upvalue, .Class => {
-                                return self.runtimeError("Only instances have properties.", .{});
+                            .String, .Function, .NativeFunction, .Closure, .Upvalue, .Class, .BoundMethod => {
+                                return self.runtimeError("Only instances have fields.", .{});
                             },
                             .Instance => {
                                 const instance = obj.asInstance();
@@ -265,6 +271,9 @@ pub const VM = struct {
             },
             .Class => {
                 try self.push((try Obj.Class.create(self, self.readString())).obj.value());
+            },
+            .Method => {
+                try self.defineMethod(self.readString());
             },
             .Print => {
                 const stdout = std.io.getStdOut().outStream();
@@ -388,11 +397,11 @@ pub const VM = struct {
 
     fn concatenate(self: *VM, lhs: *Obj, rhs: *Obj) !void {
         switch (lhs.objType) {
-            .Function, .NativeFunction, .Closure, .Upvalue, .Class, .Instance => {
+            .Function, .NativeFunction, .Closure, .Upvalue, .Class, .Instance, .BoundMethod => {
                 try self.runtimeError("Operands must be strings.", .{});
             },
             .String => switch (rhs.objType) {
-                .Function, .NativeFunction, .Closure, .Upvalue, .Class, .Instance => {
+                .Function, .NativeFunction, .Closure, .Upvalue, .Class, .Instance, .BoundMethod => {
                     try self.runtimeError("Operands must be strings.", .{});
                 },
                 .String => {
@@ -491,14 +500,36 @@ pub const VM = struct {
                         const result = obj.asNativeFunction().function(args);
                         try self.push(result);
                     },
+                    .BoundMethod => {
+                        const bound = obj.asBoundMethod();
+                        self.stack.items[self.stack.items.len - argCount - 1] = bound.receiver;
+                        try self.call(bound.method, argCount);
+                    },
                     .Class => {
-                        const args = self.stack.items[self.stack.items.len - 1 - argCount ..];
-                        try self.stack.resize(self.stack.items.len - 1 - argCount);
-                        try self.push((try Obj.Instance.create(self, obj.asClass())).obj.value());
+                        const class = obj.asClass();
+                        const instance = (try Obj.Instance.create(self, class)).obj.value();
+                        self.stack.items[self.stack.items.len - argCount - 1] = instance;
+                        var initializer: Value = undefined;
+                        if (class.methods.get(self.initString.?, &initializer)) {
+                            try self.call(initializer.Obj.asClosure(), argCount);
+                        } else if (argCount != 0) {
+                            return self.runtimeError("Expected 0 arguments but got {}.", .{argCount});
+                        }
                     },
                 }
             },
         }
+    }
+
+    fn bindMethod(self: *VM, class: *Obj.Class, name: *Obj.String) !void {
+        var method: Value = undefined;
+        if (!class.methods.get(name, &method)) {
+            return self.runtimeError("Undefined property '{}'.", .{name.bytes});
+        }
+
+        const bound = try Obj.BoundMethod.create(self, self.peek(0), method.Obj.asClosure());
+        _ = self.pop();
+        try self.push(bound.obj.value());
     }
 
     fn captureUpvalue(self: *VM, local: *Value) !*Obj.Upvalue {
@@ -535,6 +566,13 @@ pub const VM = struct {
             upvalue.location = &upvalue.closed;
             self.openUpvalues = upvalue.next;
         }
+    }
+
+    fn defineMethod(self: *VM, name: *Obj.String) !void {
+        const method = self.peek(0);
+        const class = self.peek(1).Obj.asClass();
+        _ = try class.methods.set(name, method);
+        _ = self.pop();
     }
 
     fn resetStack(self: *VM) void {

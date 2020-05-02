@@ -12,7 +12,7 @@ pub const Obj = struct {
     isMarked: bool,
 
     pub const Type = enum {
-        String, Function, NativeFunction, Closure, Upvalue, Class, Instance
+        String, Function, NativeFunction, Closure, Upvalue, Class, Instance, BoundMethod
     };
 
     pub fn allocate(vm: *VM, comptime T: type, objType: Type) !*Obj {
@@ -46,6 +46,7 @@ pub const Obj = struct {
             .Upvalue => self.asUpvalue().destroy(vm),
             .Class => self.asClass().destroy(vm),
             .Instance => self.asInstance().destroy(vm),
+            .BoundMethod => self.asBoundMethod().destroy(vm),
         }
     }
 
@@ -77,6 +78,10 @@ pub const Obj = struct {
         return self.objType == .Instance;
     }
 
+    pub fn isBoundMethod(self: *Obj) bool {
+        return self.objType == .BoundMethod;
+    }
+
     pub fn asString(self: *Obj) *String {
         return @fieldParentPtr(String, "obj", self);
     }
@@ -103,6 +108,10 @@ pub const Obj = struct {
 
     pub fn asInstance(self: *Obj) *Instance {
         return @fieldParentPtr(Instance, "obj", self);
+    }
+
+    pub fn asBoundMethod(self: *Obj) *BoundMethod {
+        return @fieldParentPtr(BoundMethod, "obj", self);
     }
 
     pub fn value(self: *Obj) Value {
@@ -274,6 +283,7 @@ pub const Obj = struct {
     pub const Class = struct {
         obj: Obj,
         name: *String,
+        methods: Table,
 
         pub fn create(vm: *VM, name: *String) !*Class {
             const obj = try Obj.allocate(vm, Class, .Class);
@@ -282,12 +292,14 @@ pub const Obj = struct {
             out.* = Class{
                 .obj = obj.*,
                 .name = name,
+                .methods = Table.init(vm.allocator),
             };
 
             return out;
         }
 
         pub fn destroy(self: *Class, vm: *VM) void {
+            self.methods.deinit();
             vm.allocator.destroy(self);
         }
     };
@@ -312,6 +324,29 @@ pub const Obj = struct {
 
         pub fn destroy(self: *Instance, vm: *VM) void {
             self.fields.deinit();
+            vm.allocator.destroy(self);
+        }
+    };
+
+    pub const BoundMethod = struct {
+        obj: Obj,
+        receiver: Value,
+        method: *Closure,
+
+        pub fn create(vm: *VM, receiver: Value, method: *Closure) !*BoundMethod {
+            const obj = try Obj.allocate(vm, BoundMethod, .BoundMethod);
+            const out = obj.asBoundMethod();
+
+            out.* = BoundMethod{
+                .obj = obj.*,
+                .receiver = receiver,
+                .method = method,
+            };
+
+            return out;
+        }
+
+        pub fn destroy(self: *BoundMethod, vm: *VM) void {
             vm.allocator.destroy(self);
         }
     };

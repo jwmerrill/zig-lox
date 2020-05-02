@@ -37,7 +37,7 @@ pub fn compile(vm: *VM, source: []const u8) !*Obj.Function {
 }
 
 const FunctionType = enum {
-    Function, Script
+    Function, Initializer, Method, Script
 };
 
 const Upvalue = struct {
@@ -64,7 +64,7 @@ pub const Compiler = struct {
         try locals.append(Local{
             .depth = 0,
             .isCaptured = false,
-            .name = "",
+            .name = if (functionType == .Function) "" else "this",
         });
 
         return Compiler{
@@ -84,6 +84,11 @@ pub const Compiler = struct {
         self.locals.deinit();
         self.upvalues.deinit();
     }
+};
+
+pub const ClassCompiler = struct {
+    enclosing: ?*ClassCompiler,
+    name: []const u8,
 };
 
 pub const Local = struct {
@@ -153,12 +158,14 @@ pub const Parser = struct {
     hadError: bool,
     panicMode: bool,
     compiler: *Compiler,
+    currentClass: ?*ClassCompiler,
 
     pub fn init(vm: *VM, compiler: *Compiler, source: []const u8) !Parser {
         return Parser{
             .vm = vm,
             .scanner = Scanner.init(source),
             .current = undefined,
+            .currentClass = null,
             .previous = undefined,
             .hadError = false,
             .panicMode = false,
@@ -282,7 +289,11 @@ pub const Parser = struct {
     }
 
     pub fn emitReturn(self: *Parser) !void {
-        try self.emitOp(.Nil);
+        switch (self.compiler.functionType) {
+            .Initializer => try self.emitUnaryOp(.GetLocal, 0),
+            .Function, .Method, .Script => try self.emitOp(.Nil),
+        }
+
         try self.emitOp(.Return);
     }
 
@@ -423,16 +434,43 @@ pub const Parser = struct {
         }
     }
 
+    pub fn method(self: *Parser) !void {
+        self.consume(.Identifier, "Expect method name.");
+        const constant = try self.identifierConstant(self.previous.lexeme);
+
+        const isInit = std.mem.eql(u8, self.previous.lexeme, "init");
+
+        try self.function(if (isInit) .Initializer else .Method);
+        try self.emitUnaryOp(.Method, constant);
+    }
+
     pub fn classDeclaration(self: *Parser) !void {
         self.consume(.Identifier, "Expect class name.");
-        const nameConstant = try self.identifierConstant(self.previous.lexeme);
+        const className = self.previous.lexeme;
+        const nameConstant = try self.identifierConstant(className);
         try self.declareVariable();
 
         try self.emitUnaryOp(.Class, nameConstant);
         try self.defineVariable(nameConstant);
 
+        var classCompiler = ClassCompiler{
+            .name = className,
+            .enclosing = self.currentClass,
+        };
+        self.currentClass = &classCompiler;
+
+        try self.namedVariable(className, false);
         self.consume(.LeftBrace, "Expect '{' before class body.");
+
+        while (!self.check(.RightBrace) and !self.check(.Eof)) {
+            try self.method();
+        }
+
         self.consume(.RightBrace, "Expect '}' after class body.");
+        // Pop the class now that we're done adding methods
+        try self.emitOp(.Pop);
+
+        self.currentClass = self.currentClass.?.enclosing;
     }
 
     pub fn funDeclaration(self: *Parser) !void {
@@ -469,6 +507,10 @@ pub const Parser = struct {
         if (self.match(.Semicolon)) {
             try self.emitReturn();
         } else {
+            if (self.compiler.functionType == .Initializer) {
+                self.err("Cannot return a value from an initializer.");
+            }
+
             try self.expression();
             self.consume(.Semicolon, "Expect ';' after return value.");
             try self.emitOp(.Return);
@@ -750,8 +792,9 @@ pub const Parser = struct {
 
             // Keywords.
             .Nil, .True, .False => try self.literal(),
+            .This => try self.this(),
             .And, .Class, .Else, .For, .Fun, .If, .Or => self.prefixError(),
-            .Print, .Return, .Super, .This, .Var, .While, .Error, .Eof => self.prefixError(),
+            .Print, .Return, .Super, .Var, .While, .Error, .Eof => self.prefixError(),
         }
     }
 
@@ -811,6 +854,14 @@ pub const Parser = struct {
 
     pub fn variable(self: *Parser, canAssign: bool) !void {
         try self.namedVariable(self.previous.lexeme, canAssign);
+    }
+
+    pub fn this(self: *Parser) !void {
+        if (self.currentClass == null) {
+            self.err("Cannot use 'this' outside of a class.");
+            return;
+        }
+        try self.variable(false);
     }
 
     pub fn namedVariable(self: *Parser, name: []const u8, canAssign: bool) !void {

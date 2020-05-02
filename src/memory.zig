@@ -98,6 +98,7 @@ pub const GCAllocator = struct {
 
         try self.markTable(&self.vm.globals);
         try self.markCompilerRoots();
+        if (self.vm.initString) |initString| try self.markObject(&initString.obj);
     }
 
     fn traceReferences(self: *GCAllocator) !void {
@@ -165,11 +166,17 @@ pub const GCAllocator = struct {
             .Class => {
                 const class = obj.asClass();
                 try self.markObject(&class.name.obj);
+                try self.markTable(&class.methods);
             },
             .Instance => {
                 const instance = obj.asInstance();
                 try self.markObject(&instance.class.obj);
                 try self.markTable(&instance.fields);
+            },
+            .BoundMethod => {
+                const bound = obj.asBoundMethod();
+                try self.markValue(bound.receiver);
+                try self.markObject(&bound.method.obj);
             },
             .NativeFunction, .String => {},
         }

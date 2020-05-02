@@ -75,6 +75,10 @@ pub fn printValue(boxed: Value) !void {
             .Instance => {
                 try stdout.print("{} instance", .{obj.asInstance().class.name.bytes});
             },
+            .BoundMethod => {
+                const name = if (obj.asBoundMethod().method.function.name) |str| str.bytes else "<script>";
+                try stdout.print("<fn {}>", .{name});
+            },
         },
     }
 }
