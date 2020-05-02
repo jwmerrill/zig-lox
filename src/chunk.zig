@@ -21,6 +21,7 @@ pub const OpCode = enum(u8) {
     JumpIfFalse,
     Loop,
     Call,
+    Invoke,
     Closure,
     CloseUpvalue,
     Class,
@@ -68,6 +69,12 @@ pub const Chunk = struct {
         try self.write(@enumToInt(op), line);
     }
 
+    pub fn addConstant(self: *Chunk, value: Value) !u9 {
+        const index = @intCast(u9, self.constants.items.len);
+        try self.constants.append(value);
+        return index;
+    }
+
     pub fn disassemble(self: *Chunk, name: []const u8) void {
         std.debug.warn("== {} ==\n", .{name});
 
@@ -107,6 +114,7 @@ pub const Chunk = struct {
             .JumpIfFalse => self.jumpInstruction("OP_JUMP_IF_FALSE", 1, offset),
             .Loop => self.jumpInstruction("OP_LOOP", -1, offset),
             .Call => self.byteInstruction("OP_CALL", offset),
+            .Invoke => self.invokeInstruction("OP_INVOKE", offset),
             .Closure => self.closureInstruction("OP_CLOSURE", offset),
             .CloseUpvalue => self.simpleInstruction("OP_CLOSE_UPVALUE", offset),
             .Class => self.constantInstruction("OP_CLASS", offset),
@@ -179,9 +187,12 @@ pub const Chunk = struct {
         return offset;
     }
 
-    pub fn addConstant(self: *Chunk, value: Value) !u9 {
-        const index = @intCast(u9, self.constants.items.len);
-        try self.constants.append(value);
-        return index;
+    fn invokeInstruction(self: *Chunk, name: []const u8, offset: usize) usize {
+        const constant = self.code.items[offset + 1];
+        const argCount = self.code.items[offset + 2];
+        std.debug.warn("{} ({} args) {} '", .{ name, argCount, constant });
+        printValue(self.constants.items[constant]) catch unreachable;
+        std.debug.warn("'\n");
+        return offset + 3;
     }
 };

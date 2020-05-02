@@ -956,6 +956,10 @@ pub const Parser = struct {
         if (canAssign and self.match(.Equal)) {
             try self.expression();
             try self.emitUnaryOp(.SetProperty, name);
+        } else if (self.match(.LeftParen)) {
+            const argCount = try self.argumentList();
+            try self.emitUnaryOp(.Invoke, name);
+            try self.emitByte(argCount);
         } else {
             try self.emitUnaryOp(.GetProperty, name);
         }

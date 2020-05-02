@@ -297,6 +297,11 @@ pub const VM = struct {
                 const argCount = self.readByte();
                 try self.callValue(self.peek(argCount), argCount);
             },
+            .Invoke => {
+                const method = self.readString();
+                const argCount = self.readByte();
+                try self.invoke(method, argCount);
+            },
             .Closure => {
                 const constant = self.readByte();
                 const value = self.currentChunk().constants.items[constant];
@@ -522,6 +527,33 @@ pub const VM = struct {
                 }
             },
         }
+    }
+
+    fn invoke(self: *VM, name: *Obj.String, argCount: u8) !void {
+        const receiver = self.peek(argCount).Obj;
+
+        if (!receiver.isInstance()) {
+            return self.runtimeError("Only instances have methods.", .{});
+        }
+
+        const instance = receiver.asInstance();
+
+        var value: Value = undefined;
+        if (instance.fields.get(name, &value)) {
+            self.stack.items[self.stack.items.len - argCount - 1] = value;
+            return self.callValue(value, argCount);
+        }
+
+        return self.invokeFromClass(instance.class, name, argCount);
+    }
+
+    fn invokeFromClass(self: *VM, class: *Obj.Class, name: *Obj.String, argCount: u8) !void {
+        var method: Value = undefined;
+        if (!class.methods.get(name, &method)) {
+            return self.runtimeError("Undefined property '{}'.", .{name.bytes});
+        }
+
+        return self.call(method.Obj.asClosure(), argCount);
     }
 
     fn bindMethod(self: *VM, class: *Obj.Class, name: *Obj.String) !void {
