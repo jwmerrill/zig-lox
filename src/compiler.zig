@@ -410,7 +410,6 @@ pub const Parser = struct {
             while (true) {
                 if (self.compiler.function.arity == 255) {
                     self.errorAtCurrent("Cannot have more than 255 parameters.");
-                    break;
                 }
 
                 self.compiler.function.arity += 1;
@@ -708,7 +707,7 @@ pub const Parser = struct {
             }
         }
 
-        if (compiler.upvalues.items.len >= maxInt(u8)) {
+        if (compiler.upvalues.items.len > maxInt(u8)) {
             self.err("Too many closure variables in function.");
             return 0;
         }
@@ -759,7 +758,7 @@ pub const Parser = struct {
     }
 
     pub fn addLocal(self: *Parser, name: []const u8) !void {
-        if (self.compiler.locals.items.len >= maxInt(u8)) {
+        if (self.compiler.locals.items.len > maxInt(u8)) {
             self.err("Too many local variables in function.");
             return;
         }

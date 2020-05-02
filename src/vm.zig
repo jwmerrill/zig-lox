@@ -38,7 +38,8 @@ pub fn clockNative(args: []const Value) Value {
     return Value{ .Number = @intToFloat(f64, std.time.milliTimestamp()) / 1000 };
 }
 
-const STACK_MAX: usize = 1024;
+const STACK_MAX = 2048;
+const FRAMES_MAX = 64;
 
 pub const VM = struct {
     gcAllocatorInstance: GCAllocator,
@@ -469,7 +470,9 @@ pub const VM = struct {
             return self.runtimeError("Expected {} arguments but got {}.", .{ arity, argCount });
         }
 
-        // NOTE book checks stack length here and overflows if necessary
+        if (self.frames.items.len == FRAMES_MAX) {
+            return self.runtimeError("Stack overflow.", .{});
+        }
 
         try self.frames.append(CallFrame{
             .closure = closure,

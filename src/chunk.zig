@@ -179,8 +179,8 @@ pub const Chunk = struct {
         return offset;
     }
 
-    pub fn addConstant(self: *Chunk, value: Value) !u8 {
-        const index = @intCast(u8, self.constants.items.len);
+    pub fn addConstant(self: *Chunk, value: Value) !u9 {
+        const index = @intCast(u9, self.constants.items.len);
         try self.constants.append(value);
         return index;
     }

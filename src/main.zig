@@ -13,7 +13,12 @@ pub fn main() !void {
             defer std.testing.allocator_instance.validate() catch unreachable;
             break :init std.testing.allocator;
         } else {
-            var allocator_mem: [1024 * 1024]u8 = undefined;
+            // TODO, use a better allocator. Should we link c to use the
+            // c allocator?
+            //
+            // NOTE, need to be able to allocate more than 2MB of memory
+            // to handle test/loop_too_large.lox
+            var allocator_mem: [4 * 1024 * 1024]u8 = undefined;
             var allocator_instance = std.heap.FixedBufferAllocator.init(allocator_mem[0..]);
             break :init &allocator_instance.allocator;
         }
