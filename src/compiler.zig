@@ -457,6 +457,7 @@ pub const Parser = struct {
             .enclosing = self.currentClass,
         };
         self.currentClass = &classCompiler;
+        defer self.currentClass = self.currentClass.?.enclosing;
 
         try self.namedVariable(className, false);
         self.consume(.LeftBrace, "Expect '{' before class body.");
@@ -468,8 +469,6 @@ pub const Parser = struct {
         self.consume(.RightBrace, "Expect '}' after class body.");
         // Pop the class now that we're done adding methods
         try self.emitOp(.Pop);
-
-        self.currentClass = self.currentClass.?.enclosing;
     }
 
     pub fn funDeclaration(self: *Parser) !void {
