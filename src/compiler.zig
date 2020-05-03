@@ -12,8 +12,6 @@ const Value = @import("./value.zig").Value;
 const Obj = @import("./object.zig").Obj;
 const debug = @import("./debug.zig");
 
-// Note, the compiler allocates objects as part of parsing that must be
-// freed by the caller.
 pub fn compile(vm: *VM, source: []const u8) !*Obj.Function {
     var compiler = try Compiler.init(vm, .Script, null);
     defer compiler.deinit();
@@ -46,8 +44,6 @@ const Upvalue = struct {
 };
 
 pub const Compiler = struct {
-    // TODO, would be nice to be able to enforce that this is a function
-    // object
     enclosing: ?*Compiler,
     function: *Obj.Function,
     functionType: FunctionType,
@@ -69,9 +65,9 @@ pub const Compiler = struct {
 
         return Compiler{
             .enclosing = enclosing,
-            // TODO, book warns we should initialize function to null
-            // and set it later for GC reasons. I'll cross that bridge
-            // when I come to it.
+            // NOTE, book warns we should initialize function to null
+            // and set it later for GC reasons, but that doesn't appear
+            // necessary to me.
             .function = try Obj.Function.create(vm),
             .functionType = functionType,
             .locals = locals,
@@ -116,13 +112,11 @@ const Precedence = enum(u8) {
     }
 };
 
-// Note, have to spell these out explicitly right now because zig has
+// NOTE, have to spell this out explicitly right now because zig has
 // trouble inferring error sets for recursive functions.
 //
 // See https://github.com/ziglang/zig/issues/2971
-const CompilerErrors = error{
-// Can happen when we try to emit bytecode or constants
-OutOfMemory};
+const CompilerErrors = error{OutOfMemory};
 
 fn getPrecedence(tokenType: TokenType) Precedence {
     return switch (tokenType) {

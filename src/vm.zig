@@ -118,7 +118,7 @@ pub const VM = struct {
         self.gcAllocatorInstance = GCAllocator.init(self, backingAllocator);
         const allocator = &self.gcAllocatorInstance.allocator;
 
-        // Note, we can tell none of this allocates because none of
+        // NOTE, we can tell none of this allocates because none of
         // these operations can fail, and allocation can always fail
         // with error.OutOfMemory
         self.allocator = allocator;
@@ -127,7 +127,7 @@ pub const VM = struct {
         self.strings = Table.init(allocator);
         self.initString = try Obj.String.copy(self, "init");
         self.globals = Table.init(allocator);
-        // Note, purposely uses the backing allocator to avoid having
+        // NOTE, purposely uses the backing allocator to avoid having
         // growing the grayStack during GC kick off more GC.
         self.grayStack = std.ArrayList(*Obj).init(backingAllocator);
 
@@ -544,9 +544,12 @@ pub const VM = struct {
             .ip = 0,
             // Stack position where this call frame begins
             //
-            // Note, book uses a pointer into the stack called "slots",
-            // but since our stack is resizable, use an index into the
-            // stack instead.
+            // NOTE, book uses a pointer into the stack called "slots",
+            // but we use an index into the stack instead. Goal was to
+            // make stack resizable, but that ended up being tricky
+            // because upvalues hold pointers into the stack, and
+            // because pushing to the stack is a very hot operation that
+            // needs to be as fast as possible.
             .start = self.stack.items.len - argCount - 1,
         });
     }
