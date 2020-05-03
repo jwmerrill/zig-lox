@@ -1,2 +1,2 @@
-build
-zig-cache
+/bin
+/zig-cache

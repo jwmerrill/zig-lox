@@ -34,11 +34,13 @@ To run tests, run
 make test
 ```
 
+Note, `test/for/closure_in_body.lox` is currently expected to fail because closuring in the induction variable in a for loop is working differently here than in the book.
+
 ## Building
 
-Running `make` creates a debug build of zig-lox at `build/bin/lox`.
+Running `make` creates a debug build of zig-lox at `bin/lox`.
 
-To create a release build, run `make fast`.
+To create a release build, run `make release`.
 
 ## Status
 
