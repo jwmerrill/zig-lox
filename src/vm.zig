@@ -118,6 +118,10 @@ pub const VM = struct {
         self.gcAllocatorInstance = GCAllocator.init(self, backingAllocator);
         const allocator = &self.gcAllocatorInstance.allocator;
 
+        // NOTE, purposely uses the backing allocator to avoid having
+        // growing the grayStack during GC kick off more GC.
+        self.grayStack = std.ArrayList(*Obj).init(backingAllocator);
+
         // NOTE, we can tell none of this allocates because none of
         // these operations can fail, and allocation can always fail
         // with error.OutOfMemory
@@ -127,9 +131,6 @@ pub const VM = struct {
         self.strings = Table.init(allocator);
         self.initString = try Obj.String.copy(self, "init");
         self.globals = Table.init(allocator);
-        // NOTE, purposely uses the backing allocator to avoid having
-        // growing the grayStack during GC kick off more GC.
-        self.grayStack = std.ArrayList(*Obj).init(backingAllocator);
 
         try self.defineNative("clock", clockNative);
     }

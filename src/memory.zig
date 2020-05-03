@@ -32,20 +32,17 @@ pub const GCAllocator = struct {
     fn realloc(allocator: *Allocator, old_mem: []u8, old_align: u29, new_size: usize, new_align: u29) std.mem.Allocator.Error![]u8 {
         const self = @fieldParentPtr(GCAllocator, "allocator", allocator);
 
+        // TODO should we only update this if backing_allocator reallocFn succeeds?
         if (new_size > old_mem.len) {
             self.bytesAllocated += new_size - old_mem.len;
         } else {
-            self.bytesAllocated += old_mem.len - new_size;
+            self.bytesAllocated -= old_mem.len - new_size;
         }
 
         if (new_size > old_mem.len) {
-            if (debug.STRESS_GC) {
+            if (self.bytesAllocated > self.nextGC or debug.STRESS_GC) {
                 try self.collectGarbage();
             }
-        }
-
-        if (self.bytesAllocated > self.nextGC) {
-            try self.collectGarbage();
         }
 
         return try self.backing_allocator.reallocFn(self.backing_allocator, old_mem, old_align, new_size, new_align);
@@ -54,11 +51,8 @@ pub const GCAllocator = struct {
     fn shrink(allocator: *Allocator, old_mem: []u8, old_align: u29, new_size: usize, new_align: u29) []u8 {
         const self = @fieldParentPtr(GCAllocator, "allocator", allocator);
 
-        if (new_size > old_mem.len) {
-            self.bytesAllocated += new_size - old_mem.len;
-        } else {
-            self.bytesAllocated += old_mem.len - new_size;
-        }
+        // NOTE, new_size is guaranteed to be less than old_mem.len
+        self.bytesAllocated -= old_mem.len - new_size;
 
         return self.backing_allocator.shrinkFn(self.backing_allocator, old_mem, old_align, new_size, new_align);
     }
@@ -129,9 +123,9 @@ pub const GCAllocator = struct {
                 const unreached = object;
                 maybeObject = object.next;
                 if (previous) |p| {
-                    p.next = object;
+                    p.next = maybeObject;
                 } else {
-                    self.vm.objects = object;
+                    self.vm.objects = maybeObject;
                 }
 
                 unreached.destroy(self.vm);

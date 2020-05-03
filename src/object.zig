@@ -35,7 +35,7 @@ pub const Obj = struct {
 
     pub fn destroy(self: *Obj, vm: *VM) void {
         if (debug.LOG_GC) {
-            std.debug.warn("{} free type {}\n", .{ @ptrToInt(self), self.objType });
+            std.debug.warn("{} free {} {}\n", .{ @ptrToInt(self), self.objType, self.value() });
         }
 
         switch (self.objType) {
