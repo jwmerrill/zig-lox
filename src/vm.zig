@@ -655,6 +655,8 @@ pub const VM = struct {
     }
 
     fn runtimeError(self: *VM, comptime message: []const u8, args: var) !void {
+        @setCold(true);
+
         std.debug.warn(message, args);
         std.debug.warn("\n", .{});
 
