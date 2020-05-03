@@ -44,41 +44,39 @@ pub const Value = union(enum) {
             },
         };
     }
-};
 
-pub fn printValue(boxed: Value) !void {
-    const stdout = std.io.getStdOut().outStream();
-
-    switch (boxed) {
-        .Number => |value| try stdout.print("{d}", .{value}),
-        .Bool => |value| try stdout.print("{}", .{value}),
-        .Nil => try stdout.print("nil", .{}),
-        .Obj => |obj| switch (obj.objType) {
-            .String => try stdout.print("{}", .{obj.asString().bytes}),
-            .Function => {
-                const name = if (obj.asFunction().name) |str| str.bytes else "<script>";
-                try stdout.print("<fn {}>", .{name});
+    pub fn format(self: Value, comptime fmt: []const u8, options: std.fmt.FormatOptions, out_stream: var) !void {
+        switch (self) {
+            .Number => |value| try out_stream.print("{d}", .{value}),
+            .Bool => |value| try out_stream.print("{}", .{value}),
+            .Nil => try out_stream.print("nil", .{}),
+            .Obj => |obj| switch (obj.objType) {
+                .String => try out_stream.print("{}", .{obj.asString().bytes}),
+                .Function => {
+                    const name = if (obj.asFunction().name) |str| str.bytes else "<script>";
+                    try out_stream.print("<fn {}>", .{name});
+                },
+                .NativeFunction => {
+                    try out_stream.print("<native fn>", .{});
+                },
+                .Closure => {
+                    const name = if (obj.asClosure().function.name) |str| str.bytes else "<script>";
+                    try out_stream.print("<fn {}>", .{name});
+                },
+                .Upvalue => {
+                    try out_stream.print("upvalue", .{});
+                },
+                .Class => {
+                    try out_stream.print("{}", .{obj.asClass().name.bytes});
+                },
+                .Instance => {
+                    try out_stream.print("{} instance", .{obj.asInstance().class.name.bytes});
+                },
+                .BoundMethod => {
+                    const name = if (obj.asBoundMethod().method.function.name) |str| str.bytes else "<script>";
+                    try out_stream.print("<fn {}>", .{name});
+                },
             },
-            .NativeFunction => {
-                try stdout.print("<native fn>", .{});
-            },
-            .Closure => {
-                const name = if (obj.asClosure().function.name) |str| str.bytes else "<script>";
-                try stdout.print("<fn {}>", .{name});
-            },
-            .Upvalue => {
-                try stdout.print("upvalue", .{});
-            },
-            .Class => {
-                try stdout.print("{}", .{obj.asClass().name.bytes});
-            },
-            .Instance => {
-                try stdout.print("{} instance", .{obj.asInstance().class.name.bytes});
-            },
-            .BoundMethod => {
-                const name = if (obj.asBoundMethod().method.function.name) |str| str.bytes else "<script>";
-                try stdout.print("<fn {}>", .{name});
-            },
-        },
+        }
     }
-}
+};

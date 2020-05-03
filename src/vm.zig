@@ -4,7 +4,6 @@ const Allocator = std.mem.Allocator;
 const Chunk = @import("./chunk.zig").Chunk;
 const OpCode = @import("./chunk.zig").OpCode;
 const Value = @import("./value.zig").Value;
-const printValue = @import("./value.zig").printValue;
 const compile = @import("./compiler.zig").compile;
 const Parser = @import("./compiler.zig").Parser;
 const debug = @import("./debug.zig");
@@ -341,8 +340,7 @@ pub const VM = struct {
             },
             .Print => {
                 const stdout = std.io.getStdOut().outStream();
-                try printValue(self.pop());
-                try stdout.print("\n", .{});
+                try stdout.print("{}\n", .{self.pop()});
             },
             .Jump => {
                 const offset = self.readShort();
@@ -679,9 +677,7 @@ pub const VM = struct {
     fn printStack(self: *VM) !void {
         std.debug.warn("          ", .{});
         for (self.stack.items) |value| {
-            std.debug.warn("[ ", .{});
-            try printValue(value);
-            std.debug.warn(" ]", .{});
+            std.debug.warn("[ {} ]", .{value});
         }
         std.debug.warn("\n", .{});
     }

@@ -2,7 +2,6 @@ const std = @import("std");
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 const Value = @import("./value.zig").Value;
-const printValue = @import("./value.zig").printValue;
 
 pub const OpCode = enum(u8) {
     Return,
@@ -148,9 +147,7 @@ pub const Chunk = struct {
 
     fn constantInstruction(self: *Chunk, name: []const u8, offset: usize) usize {
         const constant = self.code.items[offset + 1];
-        std.debug.warn("{} {} ", .{ name, constant });
-        // TODO mixes stdout and stderr in a funny way
-        printValue(self.constants.items[constant]) catch unreachable;
+        std.debug.warn("{} {} {}\n", .{ name, constant, self.constants.items[constant]});
         std.debug.warn("\n", .{});
         return offset + 2;
     }
@@ -174,9 +171,7 @@ pub const Chunk = struct {
         var offset = initialOffset + 1;
         const constant = self.code.items[offset];
         offset += 1;
-        std.debug.warn("{} {} ", .{ name, constant });
-        printValue(self.constants.items[constant]) catch unreachable;
-        std.debug.warn("\n", .{});
+        std.debug.warn("{} {} {}\n", .{ name, constant, self.constants.items[constant] });
 
         // Disassemble upvalues
         const function = self.constants.items[constant].Obj.asFunction();
@@ -196,9 +191,7 @@ pub const Chunk = struct {
     fn invokeInstruction(self: *Chunk, name: []const u8, offset: usize) usize {
         const constant = self.code.items[offset + 1];
         const argCount = self.code.items[offset + 2];
-        std.debug.warn("{} ({} args) {} '", .{ name, argCount, constant });
-        printValue(self.constants.items[constant]) catch unreachable;
-        std.debug.warn("'\n");
+        std.debug.warn("{} ({} args) {} '{}'\n'", .{ name, argCount, constant, self.constants.items[constant] });
         return offset + 3;
     }
 };

@@ -4,7 +4,6 @@ const Compiler = @import("./compiler.zig").Compiler;
 const debug = @import("./debug.zig");
 const Allocator = std.mem.Allocator;
 const Value = @import("./value.zig").Value;
-const printValue = @import("./value.zig").printValue;
 const Obj = @import("./object.zig").Obj;
 const Table = @import("./table.zig").Table;
 
@@ -142,9 +141,7 @@ pub const GCAllocator = struct {
 
     fn blackenObject(self: *GCAllocator, obj: *Obj) !void {
         if (debug.LOG_GC) {
-            std.debug.warn("{} blacken ", .{@ptrToInt(obj)});
-            printValue(obj.value()) catch unreachable;
-            std.debug.warn("\n", .{});
+            std.debug.warn("{} blacken {}\n", .{@ptrToInt(obj), obj.value()});
         }
 
         switch (obj.objType) {
@@ -197,9 +194,7 @@ pub const GCAllocator = struct {
         if (obj.isMarked) return;
 
         if (debug.LOG_GC) {
-            std.debug.warn("{} mark ", .{@ptrToInt(obj)});
-            printValue(obj.value()) catch unreachable;
-            std.debug.warn("\n", .{});
+            std.debug.warn("{} mark {}\n", .{@ptrToInt(obj), obj.value()});
         }
 
         obj.isMarked = true;

@@ -1,9 +1,10 @@
 - Maybe disassemble should accept a stream to write to instead of writing directly to stderr
-- What are the tradeoffs for making `OpCode` an `enum` vs. an `enum(u8)`. How is `ArrayList(OpCode)` actually stored if `OpCode` is an `enum`?
+- [x] What are the tradeoffs for making `OpCode` an `enum` vs. an `enum(u8)`. How is `ArrayList(OpCode)` actually stored if `OpCode` is an `enum`?
     - I guess we need the bytecode buffer to store data like indexes into the constants array in addition to opcodes. Forces us to say the underlying datatype of the enum.
 - Is there an advantage to storing operands as later bytes, instead of making the opcodes a richer data structure?
-- How do we find out if we forgot to deinitialize something in deinit?
+- [x] How do we find out if we forgot to deinitialize something in deinit?
     - GeneralPurposeDebugAllocator is maybe supposed to help with this when it lands
+    - Can also use the testing allocator and run .validate() at the end. This is kind of a weak check.
 - Use slices for many places the book uses pointers, e.g. for the scanner state and for lexemes
 - Do identifierType switch with comptime
 - [x] Represent compile and interpreter errors using Zig's error system
@@ -13,11 +14,11 @@
 - [x] Move "verbose" flags into a "flags" or "debug" file.
 - Instead of returning null from peek in scanner, be more careful about checking if we're at the end?
 - Zig's way of switching on unions and constructing union members is way nicer than the macros in C in the book
-- Can we cut down on boilerplate in VM's Add/Subtract/Multiply/Divide routines?
-- Fix printing of float values
-- Who "owns" the memory that holds string values created by the parser? Seems natural for the VM to own this memory, since it will also be responsible for owning memory created at runtime.
+- [x] Can we cut down on boilerplate in VM's Add/Subtract/Multiply/Divide routines?
+- [x] Fix printing of float values
+- [x] Who "owns" the memory that holds string values created by the parser? Seems natural for the VM to own this memory, since it will also be responsible for owning memory created at runtime.
     - Yes, the vm/GC owns this memory
-- Currently using ?*Obj for "next" pointer in objects. Could probably save space by representing the end of the list with a pointer that points back to the current object instead of using an optional here.
+- [x] Currently using ?*Obj for "next" pointer in objects. Could probably save space by representing the end of the list with a pointer that points back to the current object instead of using an optional here.
     - No, ?*Obj doesn't take more space than *Obj--it just allows a 0 pointer.
 - Interesting that lox chooses not to implement any escapes in strings
 - How should we handle OutOfMemory?
@@ -26,13 +27,13 @@
     - I think this might just be working around C's lack of multiple returns
 - Would probably be more efficient to use Zig's standard library hash map to implement string interning, since there is only one possible value, and Zig knows how to optimize that case.
 - Choosing not to implement copyString for now--it's really a performance optimization on top of takeString. May benchmark at the "optimization" phase to decide if this is worth it.
-- Using *Obj.String as the key for our hash table is a little tricky. You have to put an Obj.String inside an Obj to get a valid pointer, but an Obj can also hold other kinds of data. Initially got tripped up by passing a pointer to a local variable bound to an Obj.String.
+- [x] Using *Obj.String as the key for our hash table is a little tricky. You have to put an Obj.String inside an Obj to get a valid pointer, but an Obj can also hold other kinds of data. Initially got tripped up by passing a pointer to a local variable bound to an Obj.String.
     - This was made easier by following a struct-inheritance like strategy
-- Could use `@fieldParentPtr` in strings lookup table to look up the relevant object or value reference instead of storing it as the value in the hash table, if we wanted to. Would match design in book slightly better.
+- [x] Could use `@fieldParentPtr` in strings lookup table to look up the relevant object or value reference instead of storing it as the value in the hash table, if we wanted to. Would match design in book slightly better.
     - Again made easier by struct-inheritance
 - Allow repl line length to be longer than 256
 - Separate functions with switches for precedence, infix, and prefix are working out really nicely. Means we don't have to plumb `canAssign` to tons of places that don't care about it.
 - Ended up implementing something similar to struct inheritance by keeping an obj reference in concrete object types, and using @fieldParentPtr to go from a reference to this obj to a reference to the concrete object
 - Upvalues store a pointer to a value. I think this is because they need to be able to point to either the stack or the heap. This makes it so that we can't resize the stack. Could fix this by making upvalues a little more complicated--let them point into the stack with an integer, or into the heap with a pointer. https://github.com/munificent/craftinginterpreters/blob/master/note/answers/chapter15_virtual/3.md seems to miss the issue of pointers into the stack for both upvalues and call frames (we've already fixed the issue for call frames by using an index instead of a pointer). Also claims we can do static inference of required stack space, but what about recursion? Do we use the call frame limit as an upper bound there?
-- printValue should be a method on values. Maybe it should take a stream to print to?
+- [x] printValue should be a method on values. Maybe it should take a stream to print to?
 - Is our GCAllocator actually using the allocator protocol correctly? If it collects garbage, should it call reallocFn on the backing allocator with different arguments than it received? Expect that there may be recursive calls to shrinkFn that happen because we collect garbage.
