@@ -50,4 +50,4 @@ Feature complete. NaN boxing optimization not yet implemented.
 
 [Crafting Interpreters source code](https://github.com/munificent/craftinginterpreters)
 
-I've taken a lot of inspiration from [zox](https://github.com/raulgrell/zox), an earlier Zig implementation.
+I've taken a lot of inspiration from [zox](https://github.com/raulgrell/zox), an earlier Zig implementation. That project demonstrates creating a wasm build of the lox interpreter and running it on a web page.
