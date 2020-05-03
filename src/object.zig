@@ -139,7 +139,7 @@ pub const Obj = struct {
                 };
                 // Make sure string is visible to the GC, since adding
                 // to the table may allocate
-                try vm.push(out.obj.value());
+                vm.push(out.obj.value());
                 _ = try vm.strings.set(out, Value{ .Bool = true });
                 _ = vm.pop();
                 return out;

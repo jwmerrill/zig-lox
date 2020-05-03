@@ -38,14 +38,57 @@ pub fn clockNative(args: []const Value) Value {
     return Value{ .Number = @intToFloat(f64, std.time.milliTimestamp()) / 1000 };
 }
 
-const STACK_MAX = 2048;
 const FRAMES_MAX = 64;
+const STACK_MAX = FRAMES_MAX * (std.math.maxInt(u8) + 1);
+
+pub fn FixedCapacityStack(comptime T: type) type {
+    return struct {
+        buffer: []T,
+        items: []T,
+        allocator: *Allocator,
+
+        pub const Self = FixedCapacityStack(T);
+
+        pub fn init(allocator: *Allocator, capacity: usize) !Self {
+            var buffer = try allocator.alloc(T, capacity);
+
+            return Self{
+                .buffer = buffer,
+                .items = buffer[0..0],
+                .allocator = allocator,
+            };
+        }
+
+        pub fn deinit(self: *Self) void {
+            self.allocator.free(self.buffer);
+        }
+
+        pub fn append(self: *Self, item: T) void {
+            std.debug.assert(self.items.len < self.buffer.len);
+
+            self.items = self.buffer[0 .. self.items.len + 1];
+            self.items[self.items.len - 1] = item;
+        }
+
+        pub fn pop(self: *Self) T {
+            const val = self.items[self.items.len - 1];
+            self.items = self.buffer[0 .. self.items.len - 1];
+            return val;
+        }
+
+        pub fn resize(self: *Self, new_len: usize) !void {
+            std.debug.assert(new_len <= self.buffer.len);
+
+            self.items = self.buffer[0..new_len];
+        }
+    };
+}
 
 pub const VM = struct {
     gcAllocatorInstance: GCAllocator,
     allocator: *Allocator,
     frames: ArrayList(CallFrame), // NOTE, book uses a fixed size stack
-    stack: ArrayList(Value), // NOTE, book uses a fixed size stack
+    stack: FixedCapacityStack(Value),
     objects: ?*Obj,
     openUpvalues: ?*Obj.Upvalue,
     strings: Table,
@@ -81,18 +124,13 @@ pub const VM = struct {
         // with error.OutOfMemory
         self.allocator = allocator;
         self.frames = std.ArrayList(CallFrame).init(allocator);
-        self.stack = std.ArrayList(Value).init(allocator);
+        self.stack = try FixedCapacityStack(Value).init(backingAllocator, STACK_MAX);
         self.strings = Table.init(allocator);
         self.initString = try Obj.String.copy(self, "init");
         self.globals = Table.init(allocator);
         // Note, purposely uses the backing allocator to avoid having
         // growing the grayStack during GC kick off more GC.
         self.grayStack = std.ArrayList(*Obj).init(backingAllocator);
-
-        // We need to make sure the stack doesn't actually grow
-        // dynamically so that upvalue pointers into the stack
-        // do not get invalidated
-        try self.stack.ensureCapacity(STACK_MAX);
 
         try self.defineNative("clock", clockNative);
     }
@@ -102,6 +140,7 @@ pub const VM = struct {
         self.freeObjects();
         self.strings.deinit();
         self.globals.deinit();
+        self.frames.deinit();
         self.stack.deinit();
         self.grayStack.deinit();
     }
@@ -121,15 +160,15 @@ pub const VM = struct {
         std.debug.assert(self.stack.items.len == 0);
         defer std.debug.assert(self.stack.items.len == 0);
 
-        errdefer self.resetStack();
+        errdefer self.resetStack() catch unreachable;
         const function = try compile(self, source);
-        try self.push(function.obj.value());
+        self.push(function.obj.value());
 
         // NOTE need the function on the stack when we allocate the
         // closure so that the GC can see it.
         const closure = try Obj.Closure.create(self, function);
         _ = self.pop();
-        try self.push(closure.obj.value());
+        self.push(closure.obj.value());
 
         try self.callValue(closure.obj.value(), 0);
         try self.run();
@@ -169,14 +208,14 @@ pub const VM = struct {
                 if (self.frames.items.len == 0) return;
 
                 try self.stack.resize(frame.start);
-                try self.push(result);
+                self.push(result);
             },
             .Pop => {
                 _ = self.pop();
             },
             .GetLocal => {
                 const slot = self.readByte();
-                try self.push(self.stack.items[self.currentFrame().start + slot]);
+                self.push(self.stack.items[self.currentFrame().start + slot]);
             },
             .SetLocal => {
                 const slot = self.readByte();
@@ -188,7 +227,7 @@ pub const VM = struct {
                 if (!self.globals.get(name, &value)) {
                     return self.runtimeError("Undefined variable '{}'.", .{name.bytes});
                 }
-                try self.push(value);
+                self.push(value);
             },
             .DefineGlobal => {
                 _ = try self.globals.set(self.readString(), self.peek(0));
@@ -207,7 +246,7 @@ pub const VM = struct {
             .GetUpvalue => {
                 const slot = self.readByte();
                 // Upvalues are guaranteed to be filled in by the time we get here
-                try self.push(self.currentFrame().closure.upvalues[slot].?.location.*);
+                self.push(self.currentFrame().closure.upvalues[slot].?.location.*);
             },
             .SetUpvalue => {
                 const slot = self.readByte();
@@ -233,7 +272,7 @@ pub const VM = struct {
                                 var value: Value = undefined;
                                 if (instance.fields.get(name, &value)) {
                                     _ = self.pop(); // Instance.
-                                    try self.push(value);
+                                    self.push(value);
                                 } else {
                                     try self.bindMethod(instance.class, name);
                                 }
@@ -260,7 +299,7 @@ pub const VM = struct {
 
                                 const value = self.pop();
                                 _ = self.pop();
-                                try self.push(value);
+                                self.push(value);
                             },
                         }
                     },
@@ -276,7 +315,7 @@ pub const VM = struct {
                 _ = self.pop();
             },
             .Class => {
-                try self.push((try Obj.Class.create(self, self.readString())).obj.value());
+                self.push((try Obj.Class.create(self, self.readString())).obj.value());
             },
             .Inherit => {
                 const value = self.peek(1);
@@ -337,7 +376,7 @@ pub const VM = struct {
                 const value = self.currentChunk().constants.items[constant];
                 const function = value.Obj.asFunction();
                 const closure = try Obj.Closure.create(self, function);
-                try self.push(closure.obj.value());
+                self.push(closure.obj.value());
                 for (closure.upvalues) |*upvalue| {
                     const isLocal = self.readByte() != 0;
                     const index = self.readByte();
@@ -358,15 +397,15 @@ pub const VM = struct {
             .Constant => {
                 const constant = self.readByte();
                 const value = self.currentChunk().constants.items[constant];
-                try self.push(value);
+                self.push(value);
             },
-            .Nil => try self.push(Value.Nil),
-            .True => try self.push(Value{ .Bool = true }),
-            .False => try self.push(Value{ .Bool = false }),
+            .Nil => self.push(Value.Nil),
+            .True => self.push(Value{ .Bool = true }),
+            .False => self.push(Value{ .Bool = false }),
             .Equal => {
                 const b = self.pop();
                 const a = self.pop();
-                try self.push(Value{ .Bool = a.equals(b) });
+                self.push(Value{ .Bool = a.equals(b) });
             },
             .Greater => {
                 const rhsBoxed = self.pop();
@@ -375,7 +414,7 @@ pub const VM = struct {
                     .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers.", .{}),
                     .Number => |lhs| switch (rhsBoxed) {
                         .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers.", .{}),
-                        .Number => |rhs| try self.push(Value{ .Bool = lhs > rhs }),
+                        .Number => |rhs| self.push(Value{ .Bool = lhs > rhs }),
                     },
                 }
             },
@@ -386,7 +425,7 @@ pub const VM = struct {
                     .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers.", .{}),
                     .Number => |lhs| switch (rhsBoxed) {
                         .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers.", .{}),
-                        .Number => |rhs| try self.push(Value{ .Bool = lhs < rhs }),
+                        .Number => |rhs| self.push(Value{ .Bool = lhs < rhs }),
                     },
                 }
             },
@@ -394,7 +433,7 @@ pub const VM = struct {
                 const boxed = self.pop();
                 switch (boxed) {
                     .Bool, .Nil, .Obj => return self.runtimeError("Operand must be a number.", .{}),
-                    .Number => |value| try self.push(Value{ .Number = -value }),
+                    .Number => |value| self.push(Value{ .Number = -value }),
                 }
             },
             .Add => {
@@ -408,14 +447,14 @@ pub const VM = struct {
                     },
                     .Number => |lhs| switch (rhsBoxed) {
                         .Bool, .Nil, .Obj => return self.runtimeError("Operands must be two numbers or two strings.", .{}),
-                        .Number => |rhs| try self.push(Value{ .Number = lhs + rhs }),
+                        .Number => |rhs| self.push(Value{ .Number = lhs + rhs }),
                     },
                 }
             },
             .Subtract => try self.binaryNumericOp(sub),
             .Multiply => try self.binaryNumericOp(mul),
             .Divide => try self.binaryNumericOp(div),
-            .Not => try self.push(Value{ .Bool = self.pop().isFalsey() }),
+            .Not => self.push(Value{ .Bool = self.pop().isFalsey() }),
         }
     }
 
@@ -426,7 +465,7 @@ pub const VM = struct {
             .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers.", .{}),
             .Number => |lhs| switch (rhsBoxed) {
                 .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers.", .{}),
-                .Number => |rhs| try self.push(Value{ .Number = op(lhs, rhs) }),
+                .Number => |rhs| self.push(Value{ .Number = op(lhs, rhs) }),
             },
         }
     }
@@ -443,8 +482,8 @@ pub const VM = struct {
                 .String => {
                     // Temporarily put the strings back on the stack so
                     // they're visible to the GC when we allocate
-                    try self.push(lhs.value());
-                    try self.push(rhs.value());
+                    self.push(lhs.value());
+                    self.push(rhs.value());
                     const lhsStr = lhs.asString();
                     const rhsStr = rhs.asString();
                     const buffer = try self.allocator.alloc(u8, lhsStr.bytes.len + rhsStr.bytes.len);
@@ -452,7 +491,7 @@ pub const VM = struct {
                     std.mem.copy(u8, buffer[lhsStr.bytes.len..], rhsStr.bytes);
                     _ = self.pop();
                     _ = self.pop();
-                    try self.push((try Obj.String.create(self, buffer)).obj.value());
+                    self.push((try Obj.String.create(self, buffer)).obj.value());
                 },
             },
         }
@@ -480,15 +519,8 @@ pub const VM = struct {
         return (@intCast(u16, items[frame.ip - 2]) << 8) | items[frame.ip - 1];
     }
 
-    fn push(self: *VM, value: Value) !void {
-        if (self.stack.items.len >= STACK_MAX) {
-            // Cast this to an OutOfMemory error instead of a
-            // runtime error because the compiler pushes things onto the
-            // stack for GC visibility but doesn't expect to deal with
-            // RuntimeError.
-            return self.runtimeError("Stack overflow.", .{}) catch error.OutOfMemory;
-        }
-        try self.stack.append(value);
+    fn push(self: *VM, value: Value) void {
+        self.stack.append(value);
     }
 
     fn peek(self: *VM, back: usize) Value {
@@ -536,7 +568,7 @@ pub const VM = struct {
                         const args = self.stack.items[self.stack.items.len - 1 - argCount ..];
                         try self.stack.resize(self.stack.items.len - 1 - argCount);
                         const result = obj.asNativeFunction().function(args);
-                        try self.push(result);
+                        self.push(result);
                     },
                     .BoundMethod => {
                         const bound = obj.asBoundMethod();
@@ -594,7 +626,7 @@ pub const VM = struct {
 
         const bound = try Obj.BoundMethod.create(self, self.peek(0), method.Obj.asClosure());
         _ = self.pop();
-        try self.push(bound.obj.value());
+        self.push(bound.obj.value());
     }
 
     fn captureUpvalue(self: *VM, local: *Value) !*Obj.Upvalue {
@@ -640,8 +672,8 @@ pub const VM = struct {
         _ = self.pop();
     }
 
-    fn resetStack(self: *VM) void {
-        self.stack.shrink(0);
+    fn resetStack(self: *VM) !void {
+        try self.stack.resize(0);
     }
 
     fn printStack(self: *VM) !void {
@@ -676,9 +708,9 @@ pub const VM = struct {
         // NOTE put str on the stack immediately to make sure it doesn't
         // get garbage collected when we allocate to create the native
         // function below.
-        try self.push(str.obj.value());
+        self.push(str.obj.value());
         const functionValue = (try Obj.NativeFunction.create(self, function)).obj.value();
-        try self.push(functionValue);
+        self.push(functionValue);
         _ = try self.globals.set(str, functionValue);
         _ = self.pop();
         _ = self.pop();

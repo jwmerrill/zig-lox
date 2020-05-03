@@ -320,7 +320,7 @@ pub const Parser = struct {
     pub fn makeConstant(self: *Parser, value: Value) !u8 {
         // Make sure value is visible to the GC while addConstant
         // allocates
-        try self.vm.push(value);
+        self.vm.push(value);
         const constant = try self.currentChunk().addConstant(value);
         _ = self.vm.pop();
 
