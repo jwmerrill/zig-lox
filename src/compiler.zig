@@ -89,6 +89,7 @@ pub const Compiler = struct {
 pub const ClassCompiler = struct {
     enclosing: ?*ClassCompiler,
     name: []const u8,
+    hasSuperclass: bool,
 };
 
 pub const Local = struct {
@@ -455,9 +456,27 @@ pub const Parser = struct {
         var classCompiler = ClassCompiler{
             .name = className,
             .enclosing = self.currentClass,
+            .hasSuperclass = false,
         };
         self.currentClass = &classCompiler;
         defer self.currentClass = self.currentClass.?.enclosing;
+
+        if (self.match(.Less)) {
+            self.consume(.Identifier, "Expect superclass name.");
+            try self.variable(false);
+
+            if (std.mem.eql(u8, className, self.previous.lexeme)) {
+                self.err("A class cannot inherit from itself.");
+            }
+
+            self.beginScope();
+            try self.addLocal("super");
+            try self.defineVariable(0);
+
+            try self.namedVariable(className, false);
+            try self.emitOp(.Inherit);
+            classCompiler.hasSuperclass = true;
+        }
 
         try self.namedVariable(className, false);
         self.consume(.LeftBrace, "Expect '{' before class body.");
@@ -469,6 +488,8 @@ pub const Parser = struct {
         self.consume(.RightBrace, "Expect '}' after class body.");
         // Pop the class now that we're done adding methods
         try self.emitOp(.Pop);
+
+        if (classCompiler.hasSuperclass) try self.endScope();
     }
 
     pub fn funDeclaration(self: *Parser) !void {
@@ -791,8 +812,9 @@ pub const Parser = struct {
             // Keywords.
             .Nil, .True, .False => try self.literal(),
             .This => try self.this(),
+            .Super => try self.super(),
             .And, .Class, .Else, .For, .Fun, .If, .Or => self.prefixError(),
-            .Print, .Return, .Super, .Var, .While, .Error, .Eof => self.prefixError(),
+            .Print, .Return, .Var, .While, .Error, .Eof => self.prefixError(),
         }
     }
 
@@ -860,6 +882,31 @@ pub const Parser = struct {
             return;
         }
         try self.variable(false);
+    }
+
+    pub fn super(self: *Parser) !void {
+        if (self.currentClass) |currentClass| {
+            if (!currentClass.hasSuperclass) {
+                self.err("Cannot use 'super' in a class with no superclass.");
+            }
+        } else {
+            self.err("Cannot use 'super' outside of a class.");
+        }
+
+        self.consume(.Dot, "Expect '.' after 'super'.");
+        self.consume(.Identifier, "Expect superclass method name.");
+        const name = try self.identifierConstant(self.previous.lexeme);
+
+        try self.namedVariable("this", false);
+        if (self.match(.LeftParen)) {
+            const argCount = try self.argumentList();
+            try self.namedVariable("super", false);
+            try self.emitUnaryOp(.SuperInvoke, name);
+            try self.emitByte(argCount);
+        } else {
+            try self.namedVariable("super", false);
+            try self.emitUnaryOp(.GetSuper, name);
+        }
     }
 
     pub fn namedVariable(self: *Parser, name: []const u8, canAssign: bool) !void {

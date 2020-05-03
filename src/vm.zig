@@ -266,12 +266,36 @@ pub const VM = struct {
                     },
                 }
             },
+            .GetSuper => {
+                const name = self.readString();
+                const superclass = self.pop().Obj.asClass();
+                try self.bindMethod(superclass, name);
+            },
             .CloseUpvalue => {
                 self.closeUpvalues(&self.stack.items[self.stack.items.len - 2]);
                 _ = self.pop();
             },
             .Class => {
                 try self.push((try Obj.Class.create(self, self.readString())).obj.value());
+            },
+            .Inherit => {
+                const value = self.peek(1);
+                switch (value) {
+                    .Number, .Bool, .Nil => return self.runtimeError("Superclass must be a class.", .{}),
+                    .Obj => |obj| {
+                        if (!obj.isClass()) {
+                            return self.runtimeError("Superclass must be a class.", .{});
+                        }
+                        const superclass = obj.asClass();
+                        const subclass = self.peek(0).Obj.asClass();
+
+                        for (superclass.methods.entries) |entry| {
+                            if (entry.key) |key| _ = try subclass.methods.set(key, entry.value);
+                        }
+
+                        _ = self.pop(); // Subclass
+                    },
+                }
             },
             .Method => {
                 try self.defineMethod(self.readString());
@@ -301,6 +325,12 @@ pub const VM = struct {
                 const method = self.readString();
                 const argCount = self.readByte();
                 try self.invoke(method, argCount);
+            },
+            .SuperInvoke => {
+                const method = self.readString();
+                const argCount = self.readByte();
+                const superclass = self.pop().Obj.asClass();
+                try self.invokeFromClass(superclass, method, argCount);
             },
             .Closure => {
                 const constant = self.readByte();
