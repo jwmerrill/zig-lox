@@ -42,9 +42,9 @@ To create a release build, run `make fast`.
 
 ## Status
 
-Incomplete
+Feature complete. NaN boxing optimization not yet implemented.
 
-## Ref
+## References
 
 [Crafting Interpreters source code](https://github.com/munificent/craftinginterpreters)
 
