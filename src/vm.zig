@@ -85,11 +85,12 @@ pub const VM = struct {
         // with error.OutOfMemory
         self.allocator = allocator;
         self.frames = std.ArrayList(CallFrame).init(allocator);
-        self.stack = try FixedCapacityStack(Value).init(backingAllocator, STACK_MAX);
         self.strings = Table.init(allocator);
-        self.initString = try Obj.String.copy(self, "init");
         self.globals = Table.init(allocator);
 
+        // These ops all allocate
+        self.stack = try FixedCapacityStack(Value).init(backingAllocator, STACK_MAX);
+        self.initString = try Obj.String.copy(self, "init");
         try self.defineNative("clock", clockNative);
     }
 
