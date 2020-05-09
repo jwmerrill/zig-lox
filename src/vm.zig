@@ -9,6 +9,7 @@ const Parser = @import("./compiler.zig").Parser;
 const debug = @import("./debug.zig");
 const Obj = @import("./object.zig").Obj;
 const Table = @import("./table.zig").Table;
+const FixedCapacityStack = @import("./stack.zig").FixedCapacityStack;
 const GCAllocator = @import("./memory.zig").GCAllocator;
 
 fn add(x: f64, y: f64) f64 {
@@ -27,61 +28,18 @@ fn div(x: f64, y: f64) f64 {
     return x / y;
 }
 
-pub const CallFrame = struct {
+fn clockNative(args: []const Value) Value {
+    return Value{ .Number = @intToFloat(f64, std.time.milliTimestamp()) / 1000 };
+}
+
+const CallFrame = struct {
     closure: *Obj.Closure,
     ip: usize,
     start: usize,
 };
 
-pub fn clockNative(args: []const Value) Value {
-    return Value{ .Number = @intToFloat(f64, std.time.milliTimestamp()) / 1000 };
-}
-
 const FRAMES_MAX = 64;
 const STACK_MAX = FRAMES_MAX * (std.math.maxInt(u8) + 1);
-
-pub fn FixedCapacityStack(comptime T: type) type {
-    return struct {
-        buffer: []T,
-        items: []T,
-        allocator: *Allocator,
-
-        pub const Self = FixedCapacityStack(T);
-
-        pub fn init(allocator: *Allocator, capacity: usize) !Self {
-            var buffer = try allocator.alloc(T, capacity);
-
-            return Self{
-                .buffer = buffer,
-                .items = buffer[0..0],
-                .allocator = allocator,
-            };
-        }
-
-        pub fn deinit(self: *Self) void {
-            self.allocator.free(self.buffer);
-        }
-
-        pub fn append(self: *Self, item: T) void {
-            std.debug.assert(self.items.len < self.buffer.len);
-
-            self.items = self.buffer[0 .. self.items.len + 1];
-            self.items[self.items.len - 1] = item;
-        }
-
-        pub fn pop(self: *Self) T {
-            const val = self.items[self.items.len - 1];
-            self.items = self.buffer[0 .. self.items.len - 1];
-            return val;
-        }
-
-        pub fn resize(self: *Self, new_len: usize) !void {
-            std.debug.assert(new_len <= self.buffer.len);
-
-            self.items = self.buffer[0..new_len];
-        }
-    };
-}
 
 pub const VM = struct {
     gcAllocatorInstance: GCAllocator,

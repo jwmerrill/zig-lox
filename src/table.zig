@@ -3,6 +3,22 @@ const Allocator = std.mem.Allocator;
 const Obj = @import("./object.zig").Obj;
 const Value = @import("./value.zig").Value;
 
+const Entry = struct {
+    key: ?*Obj.String,
+    value: Value,
+
+    pub fn isTombstone(self: *Entry) bool {
+        if (self.key != null) {
+            return false;
+        } else {
+            return switch (self.value) {
+                .Nil => false,
+                else => true,
+            };
+        }
+    }
+};
+
 pub const Table = struct {
     allocator: *Allocator,
     entries: []Entry,
@@ -99,7 +115,7 @@ pub const Table = struct {
         }
     }
 
-    pub fn findEntry(entries: []Entry, key: *Obj.String) *Entry {
+    fn findEntry(entries: []Entry, key: *Obj.String) *Entry {
         var index = key.hash & (entries.len - 1);
         var maybeTombstone: ?*Entry = null;
 
@@ -143,22 +159,6 @@ pub const Table = struct {
             }
 
             index = (index + 1) & (entries.len - 1);
-        }
-    }
-};
-
-pub const Entry = struct {
-    key: ?*Obj.String,
-    value: Value,
-
-    pub fn isTombstone(self: *Entry) bool {
-        if (self.key != null) {
-            return false;
-        } else {
-            return switch (self.value) {
-                .Nil => false,
-                else => true,
-            };
         }
     }
 };
