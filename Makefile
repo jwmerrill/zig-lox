@@ -17,7 +17,7 @@ release:
 
 .PHONY: wasi
 wasi:
-	zig build-exe src/main.zig -target wasm32-wasi --output-dir build --name lox-repl
+	zig build-exe src/main.zig -target wasm32-wasi --output-dir build --name lox-repl --release-small
 
 test: lox
 	mkdir -p craftinginterpreters/build
