@@ -58,6 +58,20 @@ wasmer run build/lox-repl.wasm
 
 So far, only the REPL is supported in the WASI build--executing a source file is not yet possible.
 
+This Lox REPL is also available as the [wapm](https://wapm.io/) package [jwmerrill/lox-repl](https://wapm.io/package/jwmerrill/lox-repl). You can try it online at [webassembly.sh](https://webassembly.sh/) by installing it
+
+```
+wapm install jwmerrill/lox-repl
+```
+
+and then running
+
+```
+lox-repl
+```
+
+Note: right now this only seems to work well in Chrome.
+
 ## Status
 
 Complete.
