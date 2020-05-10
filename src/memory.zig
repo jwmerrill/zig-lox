@@ -178,10 +178,7 @@ pub const GCAllocator = struct {
     }
 
     fn markValue(self: *GCAllocator, value: Value) !void {
-        switch (value) {
-            .Bool, .Nil, .Number => {},
-            .Obj => |obj| try self.markObject(obj),
-        }
+        if (value.isObj()) try self.markObject(value.asObj());
     }
 
     fn markObject(self: *GCAllocator, obj: *Obj) !void {

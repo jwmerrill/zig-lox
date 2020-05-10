@@ -3,3 +3,5 @@ pub const TRACE_EXECUTION = false;
 pub const TESTING_ALLOCATOR = false;
 pub const STRESS_GC = false;
 pub const LOG_GC = false;
+
+pub const NAN_BOXING = true;

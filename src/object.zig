@@ -115,7 +115,7 @@ pub const Obj = struct {
     }
 
     pub fn value(self: *Obj) Value {
-        return Value{ .Obj = self };
+        return Value.fromObj(self);
     }
 
     pub const String = struct {
@@ -140,7 +140,7 @@ pub const Obj = struct {
                 // Make sure string is visible to the GC, since adding
                 // to the table may allocate
                 vm.push(out.obj.value());
-                _ = try vm.strings.set(out, Value{ .Bool = true });
+                _ = try vm.strings.set(out, Value.fromBool(true));
                 _ = vm.pop();
                 return out;
             }
@@ -268,7 +268,7 @@ pub const Obj = struct {
             out.* = Upvalue{
                 .obj = obj.*,
                 .location = location,
-                .closed = Value.Nil,
+                .closed = Value.nil(),
                 .next = null,
             };
 

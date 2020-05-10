@@ -29,7 +29,7 @@ fn div(x: f64, y: f64) f64 {
 }
 
 fn clockNative(args: []const Value) Value {
-    return Value{ .Number = @intToFloat(f64, std.time.milliTimestamp()) / 1000 };
+    return Value.fromNumber(@intToFloat(f64, std.time.milliTimestamp()) / 1000);
 }
 
 const CallFrame = struct {
@@ -153,7 +153,7 @@ pub const VM = struct {
     fn readString(self: *VM) *Obj.String {
         const constant = self.readByte();
         const nameValue = self.currentChunk().constants.items[constant];
-        return nameValue.Obj.asString();
+        return nameValue.asObj().asString();
     }
 
     fn runOp(self: *VM, opCode: OpCode) !void {
@@ -214,59 +214,47 @@ pub const VM = struct {
             },
             .GetProperty => {
                 const maybeObj = self.peek(0);
-
-                switch (maybeObj) {
-                    .Number, .Bool, .Nil => {
+                if (!maybeObj.isObj()) return self.runtimeError("Only instances have properties.", .{});
+                const obj = maybeObj.asObj();
+                switch (obj.objType) {
+                    .String, .Function, .NativeFunction, .Closure, .Upvalue, .Class, .BoundMethod => {
                         return self.runtimeError("Only instances have properties.", .{});
                     },
-                    .Obj => |obj| {
-                        switch (obj.objType) {
-                            .String, .Function, .NativeFunction, .Closure, .Upvalue, .Class, .BoundMethod => {
-                                return self.runtimeError("Only instances have properties.", .{});
-                            },
-                            .Instance => {
-                                const instance = obj.asInstance();
-                                const name = self.readString();
+                    .Instance => {
+                        const instance = obj.asInstance();
+                        const name = self.readString();
 
-                                var value: Value = undefined;
-                                if (instance.fields.get(name, &value)) {
-                                    _ = self.pop(); // Instance.
-                                    self.push(value);
-                                } else {
-                                    try self.bindMethod(instance.class, name);
-                                }
-                            },
+                        var value: Value = undefined;
+                        if (instance.fields.get(name, &value)) {
+                            _ = self.pop(); // Instance.
+                            self.push(value);
+                        } else {
+                            try self.bindMethod(instance.class, name);
                         }
                     },
                 }
             },
             .SetProperty => {
                 const maybeObj = self.peek(1);
-
-                switch (maybeObj) {
-                    .Number, .Bool, .Nil => {
+                if (!maybeObj.isObj()) return self.runtimeError("Only instances have fields.", .{});
+                const obj = maybeObj.asObj();
+                switch (obj.objType) {
+                    .String, .Function, .NativeFunction, .Closure, .Upvalue, .Class, .BoundMethod => {
                         return self.runtimeError("Only instances have fields.", .{});
                     },
-                    .Obj => |obj| {
-                        switch (obj.objType) {
-                            .String, .Function, .NativeFunction, .Closure, .Upvalue, .Class, .BoundMethod => {
-                                return self.runtimeError("Only instances have fields.", .{});
-                            },
-                            .Instance => {
-                                const instance = obj.asInstance();
-                                _ = try instance.fields.set(self.readString(), self.peek(0));
+                    .Instance => {
+                        const instance = obj.asInstance();
+                        _ = try instance.fields.set(self.readString(), self.peek(0));
 
-                                const value = self.pop();
-                                _ = self.pop();
-                                self.push(value);
-                            },
-                        }
+                        const value = self.pop();
+                        _ = self.pop();
+                        self.push(value);
                     },
                 }
             },
             .GetSuper => {
                 const name = self.readString();
-                const superclass = self.pop().Obj.asClass();
+                const superclass = self.pop().asObj().asClass();
                 try self.bindMethod(superclass, name);
             },
             .CloseUpvalue => {
@@ -277,23 +265,20 @@ pub const VM = struct {
                 self.push((try Obj.Class.create(self, self.readString())).obj.value());
             },
             .Inherit => {
-                const value = self.peek(1);
-                switch (value) {
-                    .Number, .Bool, .Nil => return self.runtimeError("Superclass must be a class.", .{}),
-                    .Obj => |obj| {
-                        if (!obj.isClass()) {
-                            return self.runtimeError("Superclass must be a class.", .{});
-                        }
-                        const superclass = obj.asClass();
-                        const subclass = self.peek(0).Obj.asClass();
-
-                        for (superclass.methods.entries) |entry| {
-                            if (entry.key) |key| _ = try subclass.methods.set(key, entry.value);
-                        }
-
-                        _ = self.pop(); // Subclass
-                    },
+                const maybeObj = self.peek(1);
+                if (!maybeObj.isObj()) return self.runtimeError("Superclass must be a class.", .{});
+                const obj = maybeObj.asObj();
+                if (!obj.isClass()) {
+                    return self.runtimeError("Superclass must be a class.", .{});
                 }
+                const superclass = obj.asClass();
+                const subclass = self.peek(0).asObj().asClass();
+
+                for (superclass.methods.entries) |entry| {
+                    if (entry.key) |key| _ = try subclass.methods.set(key, entry.value);
+                }
+
+                _ = self.pop(); // Subclass
             },
             .Method => {
                 try self.defineMethod(self.readString());
@@ -326,13 +311,13 @@ pub const VM = struct {
             .SuperInvoke => {
                 const method = self.readString();
                 const argCount = self.readByte();
-                const superclass = self.pop().Obj.asClass();
+                const superclass = self.pop().asObj().asClass();
                 try self.invokeFromClass(superclass, method, argCount);
             },
             .Closure => {
                 const constant = self.readByte();
                 const value = self.currentChunk().constants.items[constant];
-                const function = value.Obj.asFunction();
+                const function = value.asObj().asFunction();
                 const closure = try Obj.Closure.create(self, function);
                 self.push(closure.obj.value());
                 for (closure.upvalues) |*upvalue| {
@@ -357,75 +342,60 @@ pub const VM = struct {
                 const value = self.currentChunk().constants.items[constant];
                 self.push(value);
             },
-            .Nil => self.push(Value.Nil),
-            .True => self.push(Value{ .Bool = true }),
-            .False => self.push(Value{ .Bool = false }),
+            .Nil => self.push(Value.nil()),
+            .True => self.push(Value.fromBool(true)),
+            .False => self.push(Value.fromBool(false)),
             .Equal => {
                 const b = self.pop();
                 const a = self.pop();
-                self.push(Value{ .Bool = a.equals(b) });
+                self.push(Value.fromBool(a.equals(b)));
             },
             .Greater => {
-                const rhsBoxed = self.pop();
-                const lhsBoxed = self.pop();
-                switch (lhsBoxed) {
-                    .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers.", .{}),
-                    .Number => |lhs| switch (rhsBoxed) {
-                        .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers.", .{}),
-                        .Number => |rhs| self.push(Value{ .Bool = lhs > rhs }),
-                    },
+                const rhs = self.pop();
+                const lhs = self.pop();
+                if (!lhs.isNumber() or !rhs.isNumber()) {
+                    return self.runtimeError("Operands must be numbers.", .{});
                 }
+                self.push(Value.fromBool(lhs.asNumber() > rhs.asNumber()));
             },
             .Less => {
-                const rhsBoxed = self.pop();
-                const lhsBoxed = self.pop();
-                switch (lhsBoxed) {
-                    .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers.", .{}),
-                    .Number => |lhs| switch (rhsBoxed) {
-                        .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers.", .{}),
-                        .Number => |rhs| self.push(Value{ .Bool = lhs < rhs }),
-                    },
+                const rhs = self.pop();
+                const lhs = self.pop();
+                if (!lhs.isNumber() or !rhs.isNumber()) {
+                    return self.runtimeError("Operands must be numbers.", .{});
                 }
+                self.push(Value.fromBool(lhs.asNumber() < rhs.asNumber()));
             },
             .Negate => {
-                const boxed = self.pop();
-                switch (boxed) {
-                    .Bool, .Nil, .Obj => return self.runtimeError("Operand must be a number.", .{}),
-                    .Number => |value| self.push(Value{ .Number = -value }),
-                }
+                const value = self.pop();
+                if (!value.isNumber()) return self.runtimeError("Operand must be a number.", .{});
+                self.push(Value.fromNumber(-value.asNumber()));
             },
             .Add => {
-                const rhsBoxed = self.pop();
-                const lhsBoxed = self.pop();
-                switch (lhsBoxed) {
-                    .Bool, .Nil => return self.runtimeError("Operands must be two numbers or two strings.", .{}),
-                    .Obj => |lhs| switch (rhsBoxed) {
-                        .Bool, .Nil, .Number => return self.runtimeError("Operands must be two numbers or two strings.", .{}),
-                        .Obj => |rhs| try self.concatenate(lhs, rhs),
-                    },
-                    .Number => |lhs| switch (rhsBoxed) {
-                        .Bool, .Nil, .Obj => return self.runtimeError("Operands must be two numbers or two strings.", .{}),
-                        .Number => |rhs| self.push(Value{ .Number = lhs + rhs }),
-                    },
+                const rhs = self.pop();
+                const lhs = self.pop();
+                if (lhs.isObj() and rhs.isObj()) {
+                    try self.concatenate(lhs.asObj(), rhs.asObj());
+                } else if (lhs.isNumber() and rhs.isNumber()) {
+                    self.push(Value.fromNumber(lhs.asNumber() + rhs.asNumber()));
+                } else {
+                    return self.runtimeError("Operands must be two numbers or two strings.", .{});
                 }
             },
             .Subtract => try self.binaryNumericOp(sub),
             .Multiply => try self.binaryNumericOp(mul),
             .Divide => try self.binaryNumericOp(div),
-            .Not => self.push(Value{ .Bool = self.pop().isFalsey() }),
+            .Not => self.push(Value.fromBool(self.pop().isFalsey())),
         }
     }
 
     fn binaryNumericOp(self: *VM, comptime op: var) !void {
-        const rhsBoxed = self.pop();
-        const lhsBoxed = self.pop();
-        switch (lhsBoxed) {
-            .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers.", .{}),
-            .Number => |lhs| switch (rhsBoxed) {
-                .Bool, .Nil, .Obj => return self.runtimeError("Operands must be numbers.", .{}),
-                .Number => |rhs| self.push(Value{ .Number = op(lhs, rhs) }),
-            },
+        const rhs = self.pop();
+        const lhs = self.pop();
+        if (!lhs.isNumber() or !rhs.isNumber()) {
+            return self.runtimeError("Operands must be numbers.", .{});
         }
+        self.push(Value.fromNumber(op(lhs.asNumber(), rhs.asNumber())));
     }
 
     fn concatenate(self: *VM, lhs: *Obj, rhs: *Obj) !void {
@@ -515,45 +485,41 @@ pub const VM = struct {
     }
 
     fn callValue(self: *VM, callee: Value, argCount: usize) !void {
-        switch (callee) {
-            .Bool, .Nil, .Number => {
+        if (!callee.isObj()) return self.runtimeError("Can only call functions and classes.", .{});
+
+        const obj = callee.asObj();
+        switch (obj.objType) {
+            .String, .Function, .Upvalue, .Instance => {
                 return self.runtimeError("Can only call functions and classes.", .{});
             },
-            .Obj => |obj| {
-                switch (obj.objType) {
-                    .String, .Function, .Upvalue, .Instance => {
-                        return self.runtimeError("Can only call functions and classes.", .{});
-                    },
-                    .Closure => try self.call(obj.asClosure(), argCount),
-                    .NativeFunction => {
-                        const args = self.stack.items[self.stack.items.len - 1 - argCount ..];
-                        try self.stack.resize(self.stack.items.len - 1 - argCount);
-                        const result = obj.asNativeFunction().function(args);
-                        self.push(result);
-                    },
-                    .BoundMethod => {
-                        const bound = obj.asBoundMethod();
-                        self.stack.items[self.stack.items.len - argCount - 1] = bound.receiver;
-                        try self.call(bound.method, argCount);
-                    },
-                    .Class => {
-                        const class = obj.asClass();
-                        const instance = (try Obj.Instance.create(self, class)).obj.value();
-                        self.stack.items[self.stack.items.len - argCount - 1] = instance;
-                        var initializer: Value = undefined;
-                        if (class.methods.get(self.initString.?, &initializer)) {
-                            try self.call(initializer.Obj.asClosure(), argCount);
-                        } else if (argCount != 0) {
-                            return self.runtimeError("Expected 0 arguments but got {}.", .{argCount});
-                        }
-                    },
+            .Closure => try self.call(obj.asClosure(), argCount),
+            .NativeFunction => {
+                const args = self.stack.items[self.stack.items.len - 1 - argCount ..];
+                try self.stack.resize(self.stack.items.len - 1 - argCount);
+                const result = obj.asNativeFunction().function(args);
+                self.push(result);
+            },
+            .BoundMethod => {
+                const bound = obj.asBoundMethod();
+                self.stack.items[self.stack.items.len - argCount - 1] = bound.receiver;
+                try self.call(bound.method, argCount);
+            },
+            .Class => {
+                const class = obj.asClass();
+                const instance = (try Obj.Instance.create(self, class)).obj.value();
+                self.stack.items[self.stack.items.len - argCount - 1] = instance;
+                var initializer: Value = undefined;
+                if (class.methods.get(self.initString.?, &initializer)) {
+                    try self.call(initializer.asObj().asClosure(), argCount);
+                } else if (argCount != 0) {
+                    return self.runtimeError("Expected 0 arguments but got {}.", .{argCount});
                 }
             },
         }
     }
 
     fn invoke(self: *VM, name: *Obj.String, argCount: u8) !void {
-        const receiver = self.peek(argCount).Obj;
+        const receiver = self.peek(argCount).asObj();
 
         if (!receiver.isInstance()) {
             return self.runtimeError("Only instances have methods.", .{});
@@ -576,7 +542,7 @@ pub const VM = struct {
             return self.runtimeError("Undefined property '{}'.", .{name.bytes});
         }
 
-        return self.call(method.Obj.asClosure(), argCount);
+        return self.call(method.asObj().asClosure(), argCount);
     }
 
     fn bindMethod(self: *VM, class: *Obj.Class, name: *Obj.String) !void {
@@ -585,7 +551,7 @@ pub const VM = struct {
             return self.runtimeError("Undefined property '{}'.", .{name.bytes});
         }
 
-        const bound = try Obj.BoundMethod.create(self, self.peek(0), method.Obj.asClosure());
+        const bound = try Obj.BoundMethod.create(self, self.peek(0), method.asObj().asClosure());
         _ = self.pop();
         self.push(bound.obj.value());
     }
@@ -628,7 +594,7 @@ pub const VM = struct {
 
     fn defineMethod(self: *VM, name: *Obj.String) !void {
         const method = self.peek(0);
-        const class = self.peek(1).Obj.asClass();
+        const class = self.peek(1).asObj().asClass();
         _ = try class.methods.set(name, method);
         _ = self.pop();
     }

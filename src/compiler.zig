@@ -839,7 +839,7 @@ pub const Parser = struct {
 
     fn number(self: *Parser) !void {
         if (std.fmt.parseFloat(f64, self.previous.lexeme)) |value| {
-            try self.emitConstant(Value{ .Number = value });
+            try self.emitConstant(Value.fromNumber(value));
         } else |e| switch (e) {
             error.InvalidCharacter => {
                 self.err("Could not parse number");

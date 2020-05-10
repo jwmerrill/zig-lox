@@ -44,7 +44,7 @@ To create a release build, run `make release`.
 
 ## Status
 
-Feature complete. NaN boxing optimization not yet implemented.
+Complete.
 
 ## References
 

@@ -11,10 +11,7 @@ const Entry = struct {
         if (self.key != null) {
             return false;
         } else {
-            return switch (self.value) {
-                .Nil => false,
-                else => true,
-            };
+            return (!self.value.isNil());
         }
     }
 };
@@ -75,7 +72,7 @@ pub const Table = struct {
 
         // Add "tombstone" represented by empty key and true value
         entry.key = null;
-        entry.value = Value{ .Bool = true };
+        entry.value = Value.fromBool(true);
         return true;
     }
 
@@ -86,7 +83,7 @@ pub const Table = struct {
         // Initialize new entries to empty values
         for (entries) |*entry| {
             entry.key = null;
-            entry.value = Value.Nil;
+            entry.value = Value.nil();
         }
 
         // Copy old entries to new entries
