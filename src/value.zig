@@ -46,7 +46,7 @@ pub const NanBoxedValue = packed struct {
 
     pub fn asObj(self: NanBoxedValue) *Obj {
         std.debug.assert(self.isObj());
-        return @intToPtr(*Obj, self.data & ~(SIGN_BIT | QNAN));
+        return @intToPtr(*Obj, @intCast(usize, self.data & ~(SIGN_BIT | QNAN)));
     }
 
     pub fn fromNumber(x: f64) NanBoxedValue {

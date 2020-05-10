@@ -1,2 +1,3 @@
-/bin
 /zig-cache
+/bin
+/build

@@ -9,24 +9,31 @@ const debug = @import("./debug.zig");
 
 pub fn main() !void {
     const allocator = init: {
-        if (debug.TESTING_ALLOCATOR) {
+        if (comptime debug.TESTING_ALLOCATOR) {
             defer std.testing.allocator_instance.validate() catch unreachable;
             break :init std.testing.allocator;
+        } else if (comptime std.Target.current.isWasm()) {
+            // TODO, this allocator is very inefficient
+            break :init std.heap.page_allocator;
         } else {
             break :init std.heap.c_allocator;
         }
     };
 
-    const args = try process.argsAlloc(allocator);
-    defer process.argsFree(allocator, args);
+    if (comptime std.Target.current.isWasm()) {
+        try repl(allocator);
+    } else {
+        const args = try process.argsAlloc(allocator);
+        defer process.argsFree(allocator, args);
 
-    switch (args.len) {
-        1 => try repl(allocator),
-        2 => try runFile(allocator, args[1]),
-        else => {
-            std.debug.warn("Usage: clox [path]\n", .{});
-            process.exit(64);
-        },
+        switch (args.len) {
+            1 => try repl(allocator),
+            2 => try runFile(allocator, args[1]),
+            else => {
+                std.debug.warn("Usage: clox [path]\n", .{});
+                process.exit(64);
+            },
+        }
     }
 }
 

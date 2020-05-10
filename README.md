@@ -42,6 +42,22 @@ Running `make` creates a debug build of zig-lox at `bin/lox`.
 
 To create a release build, run `make release`.
 
+## Experimental WASI build
+
+It is also possible to produce a build targeting the [WebAssembly System Interface](https://wasi.dev/). Running
+
+```
+make wasi
+```
+
+will create a build at `build/lox-repl.wasm`, which can be run using [Wasmer](https://wasmer.io/) like this:
+
+```
+wasmer run build/lox-repl.wasm
+```
+
+So far, only the REPL is supported in the WASI build--executing a source file is not yet possible.
+
 ## Status
 
 Complete.

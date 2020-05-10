@@ -3,6 +3,7 @@ all: lox
 .PHONY: clean
 clean:
 	rm -rf bin/*
+	rm -rf build/*
 	rm -rf zig-cache
 	cd craftinginterpreters && make clean
 
@@ -13,6 +14,10 @@ lox:
 .PHONY: release
 release:
 	zig build --prefix '.' -Drelease-fast=true
+
+.PHONY: wasi
+wasi:
+	zig build-exe src/main.zig -target wasm32-wasi --output-dir build --name lox-repl
 
 test: lox
 	mkdir -p craftinginterpreters/build
