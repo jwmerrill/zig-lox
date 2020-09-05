@@ -23,11 +23,11 @@ pub fn compile(vm: *VM, source: []const u8) !*Obj.Function {
     vm.parser = &parser;
     defer vm.parser = null;
 
-    parser.advance();
-    while (!parser.match(.Eof)) {
+    try parser.advance();
+    while (!(try parser.match(.Eof))) {
         try parser.declaration();
     }
-    parser.consume(.Eof, "Expect end of expression.");
+    try parser.consume(.Eof, "Expect end of expression.");
     const fun = try parser.end();
 
     if (parser.hadError) return error.CompileError;
@@ -116,7 +116,7 @@ const Precedence = enum(u8) {
 // trouble inferring error sets for recursive functions.
 //
 // See https://github.com/ziglang/zig/issues/2971
-const CompilerErrors = error{OutOfMemory};
+const CompilerErrors = error{OutOfMemory} || std.os.WriteError;
 
 fn getPrecedence(tokenType: TokenType) Precedence {
     return switch (tokenType) {
@@ -172,13 +172,13 @@ pub const Parser = struct {
         return &self.compiler.function.chunk;
     }
 
-    fn advance(self: *Parser) void {
+    fn advance(self: *Parser) !void {
         self.previous = self.current;
 
         while (true) {
             self.current = self.scanner.scanToken();
             if (!self.check(.Error)) break;
-            self.errorAtCurrent(self.current.lexeme);
+            try self.errorAtCurrent(self.current.lexeme);
         }
     }
 
@@ -186,53 +186,53 @@ pub const Parser = struct {
         return self.current.tokenType == tokenType;
     }
 
-    fn consume(self: *Parser, tokenType: TokenType, message: []const u8) void {
+    fn consume(self: *Parser, tokenType: TokenType, message: []const u8) !void {
         if (self.check(tokenType)) {
-            self.advance();
+            try self.advance();
         } else {
-            self.errorAtCurrent(message);
+            try self.errorAtCurrent(message);
         }
     }
 
-    fn match(self: *Parser, tokenType: TokenType) bool {
+    fn match(self: *Parser, tokenType: TokenType) !bool {
         if (!self.check(tokenType)) return false;
-        self.advance();
+        try self.advance();
         return true;
     }
 
-    fn errorAtCurrent(self: *Parser, message: []const u8) void {
-        self.errorAt(&self.current, message);
+    fn errorAtCurrent(self: *Parser, message: []const u8) !void {
+        try self.errorAt(&self.current, message);
     }
 
-    fn err(self: *Parser, message: []const u8) void {
-        self.errorAt(&self.previous, message);
+    fn err(self: *Parser, message: []const u8) !void {
+        try self.errorAt(&self.previous, message);
     }
 
-    fn prefixError(self: *Parser) void {
-        self.err("Expect expression.");
+    fn prefixError(self: *Parser) !void {
+        try self.err("Expect expression.");
     }
 
-    fn infixError(self: *Parser) void {
-        self.err("Expect expression.");
+    fn infixError(self: *Parser) !void {
+        try self.err("Expect expression.");
     }
 
-    fn errorAt(self: *Parser, token: *Token, message: []const u8) void {
+    fn errorAt(self: *Parser, token: *Token, message: []const u8) !void {
         if (self.panicMode) return;
         self.panicMode = true;
 
-        warn("[line {}] Error", .{token.line});
+        try self.vm.errStream.print("[line {}] Error", .{token.line});
 
         switch (token.tokenType) {
             .Eof => {
-                warn(" at end", .{});
+                try self.vm.errStream.print(" at end", .{});
             },
             .Error => {},
             else => {
-                warn(" at '{}'", .{token.lexeme});
+                try self.vm.errStream.print(" at '{}'", .{token.lexeme});
             },
         }
 
-        warn(": {}\n", .{message});
+        try self.vm.errStream.print(": {}\n", .{message});
 
         self.hadError = true;
     }
@@ -245,11 +245,11 @@ pub const Parser = struct {
         return self.currentChunk().code.items.len - 2;
     }
 
-    fn patchJump(self: *Parser, offset: usize) void {
+    fn patchJump(self: *Parser, offset: usize) !void {
         const jump = self.currentChunk().code.items.len - offset - 2;
 
         if (jump > maxInt(u16)) {
-            self.err("Too much code to jump over.");
+            try self.err("Too much code to jump over.");
         }
 
         self.currentChunk().code.items[offset] = @intCast(u8, (jump >> 8) & 0xff);
@@ -260,7 +260,7 @@ pub const Parser = struct {
         try self.emitOp(.Loop);
 
         const offset = self.currentChunk().code.items.len - loopStart + 2;
-        if (offset > maxInt(u16)) self.err("Loop body too large.");
+        if (offset > maxInt(u16)) try self.err("Loop body too large.");
 
         try self.emitByte(@intCast(u8, (offset >> 8) & 0xff));
         try self.emitByte(@intCast(u8, offset & 0xff));
@@ -319,7 +319,7 @@ pub const Parser = struct {
         _ = self.vm.pop();
 
         if (constant > maxInt(u8)) {
-            self.err("Too many constants in one chunk.");
+            try self.err("Too many constants in one chunk.");
             return 0;
         }
 
@@ -327,31 +327,31 @@ pub const Parser = struct {
     }
 
     fn declaration(self: *Parser) !void {
-        if (self.match(.Class)) {
+        if (try self.match(.Class)) {
             try self.classDeclaration();
-        } else if (self.match(.Fun)) {
+        } else if (try self.match(.Fun)) {
             try self.funDeclaration();
-        } else if (self.match(.Var)) {
+        } else if (try self.match(.Var)) {
             try self.varDeclaration();
         } else {
             try self.statement();
         }
 
-        if (self.panicMode) self.synchronize();
+        if (self.panicMode) try self.synchronize();
     }
 
     fn statement(self: *Parser) !void {
-        if (self.match(.Print)) {
+        if (try self.match(.Print)) {
             try self.printStatement();
-        } else if (self.match(.Return)) {
+        } else if (try self.match(.Return)) {
             try self.returnStatement();
-        } else if (self.match(.If)) {
+        } else if (try self.match(.If)) {
             try self.ifStatement();
-        } else if (self.match(.While)) {
+        } else if (try self.match(.While)) {
             try self.whileStatement();
-        } else if (self.match(.For)) {
+        } else if (try self.match(.For)) {
             try self.forStatement();
-        } else if (self.match(.LeftBrace)) {
+        } else if (try self.match(.LeftBrace)) {
             self.beginScope();
             try self.block();
             try self.endScope();
@@ -389,7 +389,7 @@ pub const Parser = struct {
             try self.declaration();
         }
 
-        self.consume(.RightBrace, "Expect '}' after block.");
+        try self.consume(.RightBrace, "Expect '}' after block.");
     }
 
     fn function(self: *Parser, functionType: FunctionType) !void {
@@ -400,23 +400,23 @@ pub const Parser = struct {
         self.beginScope();
 
         // Compile the parameter list
-        self.consume(.LeftParen, "Expect '(' after function name.");
+        try self.consume(.LeftParen, "Expect '(' after function name.");
         if (!self.check(.RightParen)) {
             while (true) {
                 if (self.compiler.function.arity == 255) {
-                    self.errorAtCurrent("Cannot have more than 255 parameters.");
+                    try self.errorAtCurrent("Cannot have more than 255 parameters.");
                 }
 
                 self.compiler.function.arity += 1;
                 const paramConstant = try self.parseVariable("Expect parameter name.");
                 try self.defineVariable(paramConstant);
-                if (!self.match(.Comma)) break;
+                if (!try self.match(.Comma)) break;
             }
         }
-        self.consume(.RightParen, "Expect ')' after parameters.");
+        try self.consume(.RightParen, "Expect ')' after parameters.");
 
         // The body.
-        self.consume(.LeftBrace, "Expect '{' before function body.");
+        try self.consume(.LeftBrace, "Expect '{' before function body.");
         try self.block();
 
         const fun = try self.end();
@@ -429,7 +429,7 @@ pub const Parser = struct {
     }
 
     fn method(self: *Parser) !void {
-        self.consume(.Identifier, "Expect method name.");
+        try self.consume(.Identifier, "Expect method name.");
         const constant = try self.identifierConstant(self.previous.lexeme);
 
         const isInit = std.mem.eql(u8, self.previous.lexeme, "init");
@@ -439,7 +439,7 @@ pub const Parser = struct {
     }
 
     fn classDeclaration(self: *Parser) !void {
-        self.consume(.Identifier, "Expect class name.");
+        try self.consume(.Identifier, "Expect class name.");
         const className = self.previous.lexeme;
         const nameConstant = try self.identifierConstant(className);
         try self.declareVariable();
@@ -455,12 +455,12 @@ pub const Parser = struct {
         self.currentClass = &classCompiler;
         defer self.currentClass = self.currentClass.?.enclosing;
 
-        if (self.match(.Less)) {
-            self.consume(.Identifier, "Expect superclass name.");
+        if (try self.match(.Less)) {
+            try self.consume(.Identifier, "Expect superclass name.");
             try self.variable(false);
 
             if (std.mem.eql(u8, className, self.previous.lexeme)) {
-                self.err("A class cannot inherit from itself.");
+                try self.err("A class cannot inherit from itself.");
             }
 
             self.beginScope();
@@ -473,13 +473,13 @@ pub const Parser = struct {
         }
 
         try self.namedVariable(className, false);
-        self.consume(.LeftBrace, "Expect '{' before class body.");
+        try self.consume(.LeftBrace, "Expect '{' before class body.");
 
         while (!self.check(.RightBrace) and !self.check(.Eof)) {
             try self.method();
         }
 
-        self.consume(.RightBrace, "Expect '}' after class body.");
+        try self.consume(.RightBrace, "Expect '}' after class body.");
         // Pop the class now that we're done adding methods
         try self.emitOp(.Pop);
 
@@ -496,63 +496,63 @@ pub const Parser = struct {
     fn varDeclaration(self: *Parser) !void {
         const global: u8 = try self.parseVariable("Expect variable name.");
 
-        if (self.match(.Equal)) {
+        if (try self.match(.Equal)) {
             try self.expression();
         } else {
             try self.emitOp(.Nil);
         }
-        self.consume(.Semicolon, "Expect ';' after variable declaration.");
+        try self.consume(.Semicolon, "Expect ';' after variable declaration.");
 
         try self.defineVariable(global);
     }
 
     fn printStatement(self: *Parser) !void {
         try self.expression();
-        self.consume(.Semicolon, "Expect ';' after value.");
+        try self.consume(.Semicolon, "Expect ';' after value.");
         try self.emitOp(.Print);
     }
 
     fn returnStatement(self: *Parser) !void {
         if (self.compiler.functionType == .Script) {
-            return self.err("Cannot return from top-level code.");
+            return try self.err("Cannot return from top-level code.");
         }
 
-        if (self.match(.Semicolon)) {
+        if (try self.match(.Semicolon)) {
             try self.emitReturn();
         } else {
             if (self.compiler.functionType == .Initializer) {
-                self.err("Cannot return a value from an initializer.");
+                try self.err("Cannot return a value from an initializer.");
             }
 
             try self.expression();
-            self.consume(.Semicolon, "Expect ';' after return value.");
+            try self.consume(.Semicolon, "Expect ';' after return value.");
             try self.emitOp(.Return);
         }
     }
 
     fn ifStatement(self: *Parser) CompilerErrors!void {
-        self.consume(.LeftParen, "Expect '(' after 'if'.");
+        try self.consume(.LeftParen, "Expect '(' after 'if'.");
         try self.expression();
-        self.consume(.RightParen, "Expect ')' after condition.");
+        try self.consume(.RightParen, "Expect ')' after condition.");
 
         const thenJump = try self.emitJump(.JumpIfFalse);
         try self.emitOp(.Pop);
         try self.statement();
         const elseJump = try self.emitJump(.Jump);
 
-        self.patchJump(thenJump);
+        try self.patchJump(thenJump);
         try self.emitOp(.Pop);
 
-        if (self.match(.Else)) try self.statement();
-        self.patchJump(elseJump);
+        if (try self.match(.Else)) try self.statement();
+        try self.patchJump(elseJump);
     }
 
     fn whileStatement(self: *Parser) CompilerErrors!void {
         const loopStart = self.currentChunk().code.items.len;
 
-        self.consume(.LeftParen, "Expect '(' after 'while'.");
+        try self.consume(.LeftParen, "Expect '(' after 'while'.");
         try self.expression();
-        self.consume(.RightParen, "Expect ')' after condition.");
+        try self.consume(.RightParen, "Expect ')' after condition.");
 
         const exitJump = try self.emitJump(.JumpIfFalse);
 
@@ -561,17 +561,17 @@ pub const Parser = struct {
 
         try self.emitLoop(loopStart);
 
-        self.patchJump(exitJump);
+        try self.patchJump(exitJump);
         try self.emitOp(.Pop);
     }
 
     fn forStatement(self: *Parser) CompilerErrors!void {
         self.beginScope();
 
-        self.consume(.LeftParen, "Expect '(' after 'for'.");
-        if (self.match(.Semicolon)) {
+        try self.consume(.LeftParen, "Expect '(' after 'for'.");
+        if (try self.match(.Semicolon)) {
             // No initializer
-        } else if (self.match(.Var)) {
+        } else if (try self.match(.Var)) {
             try self.varDeclaration();
         } else {
             try self.expressionStatement();
@@ -580,26 +580,26 @@ pub const Parser = struct {
         var loopStart = self.currentChunk().code.items.len;
 
         var maybeExitJump: ?usize = null;
-        if (!self.match(.Semicolon)) {
+        if (!try self.match(.Semicolon)) {
             try self.expression();
-            self.consume(.Semicolon, "Expect ';' after loop condition.");
+            try self.consume(.Semicolon, "Expect ';' after loop condition.");
 
             // Jump out of the loop if the condition is false
             maybeExitJump = try self.emitJump(.JumpIfFalse);
             try self.emitOp(.Pop); // Condition
         }
 
-        if (!self.match(.RightParen)) {
+        if (!try self.match(.RightParen)) {
             const bodyJump = try self.emitJump(.Jump);
 
             const incrementStart = self.currentChunk().code.items.len;
             try self.expression();
             try self.emitOp(.Pop);
-            self.consume(.RightParen, "Expect ')' after for clauses.");
+            try self.consume(.RightParen, "Expect ')' after for clauses.");
 
             try self.emitLoop(loopStart);
             loopStart = incrementStart;
-            self.patchJump(bodyJump);
+            try self.patchJump(bodyJump);
         }
 
         try self.statement();
@@ -607,7 +607,7 @@ pub const Parser = struct {
         try self.emitLoop(loopStart);
 
         if (maybeExitJump) |exitJump| {
-            self.patchJump(exitJump);
+            try self.patchJump(exitJump);
             try self.emitOp(.Pop);
         }
 
@@ -616,11 +616,11 @@ pub const Parser = struct {
 
     fn expressionStatement(self: *Parser) !void {
         try self.expression();
-        self.consume(.Semicolon, "Expect ';' after expression.");
+        try self.consume(.Semicolon, "Expect ';' after expression.");
         try self.emitOp(.Pop);
     }
 
-    fn synchronize(self: *Parser) void {
+    fn synchronize(self: *Parser) !void {
         self.panicMode = false;
 
         while (!self.check(.Eof)) {
@@ -628,29 +628,29 @@ pub const Parser = struct {
 
             switch (self.current.tokenType) {
                 .Class, .Fun, .Var, .For, .If, .While, .Print, .Return => return,
-                else => self.advance(),
+                else => try self.advance(),
             }
         }
     }
 
     fn parsePrecedence(self: *Parser, precedence: Precedence) CompilerErrors!void {
-        self.advance();
+        try self.advance();
 
         const canAssign = @enumToInt(precedence) <= @enumToInt(Precedence.Assignment);
         try self.prefix(self.previous.tokenType, canAssign);
 
         while (@enumToInt(precedence) <= @enumToInt(getPrecedence(self.current.tokenType))) {
-            self.advance();
+            try self.advance();
             try self.infix(self.previous.tokenType, canAssign);
         }
 
-        if (canAssign and self.match(.Equal)) {
-            self.err("Invalid assignment target.");
+        if (canAssign and try self.match(.Equal)) {
+            try self.err("Invalid assignment target.");
         }
     }
 
     fn parseVariable(self: *Parser, message: []const u8) !u8 {
-        self.consume(.Identifier, message);
+        try self.consume(.Identifier, message);
 
         try self.declareVariable();
         if (self.compiler.scopeDepth > 0) return 0;
@@ -671,18 +671,18 @@ pub const Parser = struct {
         const endJump = try self.emitJump(.JumpIfFalse);
         try self.emitOp(.Pop);
         try self.parsePrecedence(.And);
-        self.patchJump(endJump);
+        try self.patchJump(endJump);
     }
 
     fn or_(self: *Parser) !void {
         const elseJump = try self.emitJump(.JumpIfFalse);
         const endJump = try self.emitJump(.Jump);
 
-        self.patchJump(elseJump);
+        try self.patchJump(elseJump);
         try self.emitOp(.Pop);
 
         try self.parsePrecedence(.Or);
-        self.patchJump(endJump);
+        try self.patchJump(endJump);
     }
 
     fn markInitialized(self: *Parser) void {
@@ -707,7 +707,7 @@ pub const Parser = struct {
             if (local.depth != -1 and local.depth < self.compiler.scopeDepth) break;
 
             if (std.mem.eql(u8, name, local.name)) {
-                self.err("Variable with this name already declared in this scope.");
+                try self.err("Variable with this name already declared in this scope.");
             }
         }
 
@@ -722,7 +722,7 @@ pub const Parser = struct {
         }
 
         if (compiler.upvalues.items.len > maxInt(u8)) {
-            self.err("Too many closure variables in function.");
+            try self.err("Too many closure variables in function.");
             return 0;
         }
 
@@ -735,7 +735,7 @@ pub const Parser = struct {
         return compiler.upvalues.items.len - 1;
     }
 
-    fn resolveLocal(self: *Parser, compiler: *Compiler, name: []const u8) isize {
+    fn resolveLocal(self: *Parser, compiler: *Compiler, name: []const u8) !isize {
         var locals = &compiler.locals;
 
         var i: usize = 0;
@@ -743,7 +743,7 @@ pub const Parser = struct {
             const local = locals.items[locals.items.len - 1 - i];
             if (std.mem.eql(u8, name, local.name)) {
                 if (local.depth == -1) {
-                    self.err("Cannot read local variable in its own initializer.");
+                    try self.err("Cannot read local variable in its own initializer.");
                 }
                 return @intCast(isize, locals.items.len - 1 - i);
             }
@@ -754,7 +754,7 @@ pub const Parser = struct {
 
     fn resolveUpvalue(self: *Parser, compiler: *Compiler, name: []const u8) CompilerErrors!isize {
         if (compiler.enclosing) |enclosing| {
-            const local = self.resolveLocal(enclosing, name);
+            const local = try self.resolveLocal(enclosing, name);
             if (local != -1) {
                 enclosing.locals.items[@intCast(u8, local)].isCaptured = true;
                 const index = try self.addUpvalue(compiler, @intCast(u8, local), true);
@@ -773,7 +773,7 @@ pub const Parser = struct {
 
     fn addLocal(self: *Parser, name: []const u8) !void {
         if (self.compiler.locals.items.len > maxInt(u8)) {
-            self.err("Too many local variables in function.");
+            try self.err("Too many local variables in function.");
             return;
         }
 
@@ -790,13 +790,13 @@ pub const Parser = struct {
             // Single-character tokens.
             .LeftParen => try self.grouping(),
             .Minus => try self.unary(),
-            .RightParen, .LeftBrace, .RightBrace, .Comma, .Dot => self.prefixError(),
-            .Plus, .Semicolon, .Slash, .Star => self.prefixError(),
+            .RightParen, .LeftBrace, .RightBrace, .Comma, .Dot => try self.prefixError(),
+            .Plus, .Semicolon, .Slash, .Star => try self.prefixError(),
 
             // One or two character tokens.
             .Bang => try self.unary(),
-            .Equal, .BangEqual, .EqualEqual, .Greater, .GreaterEqual => self.prefixError(),
-            .Less, .LessEqual => self.prefixError(),
+            .Equal, .BangEqual, .EqualEqual, .Greater, .GreaterEqual => try self.prefixError(),
+            .Less, .LessEqual => try self.prefixError(),
 
             // Literals.
             .Identifier => try self.variable(canAssign),
@@ -807,8 +807,8 @@ pub const Parser = struct {
             .Nil, .True, .False => try self.literal(),
             .This => try self.this(),
             .Super => try self.super(),
-            .And, .Class, .Else, .For, .Fun, .If, .Or => self.prefixError(),
-            .Print, .Return, .Var, .While, .Error, .Eof => self.prefixError(),
+            .And, .Class, .Else, .For, .Fun, .If, .Or => try self.prefixError(),
+            .Print, .Return, .Var, .While, .Error, .Eof => try self.prefixError(),
         }
     }
 
@@ -818,22 +818,22 @@ pub const Parser = struct {
             .Minus, .Plus, .Slash, .Star => try self.binary(),
             .LeftParen => try self.call(),
             .Dot => try self.dot(canAssign),
-            .RightParen, .LeftBrace, .RightBrace, .Comma, .Semicolon => self.infixError(),
+            .RightParen, .LeftBrace, .RightBrace, .Comma, .Semicolon => try self.infixError(),
 
             // One or two character tokens.
             .BangEqual, .EqualEqual, .Greater, .GreaterEqual => try self.binary(),
             .Less, .LessEqual => try self.binary(),
 
-            .Bang, .Equal => self.infixError(),
+            .Bang, .Equal => try self.infixError(),
 
             // Literals.
-            .Identifier, .String, .Number => self.infixError(),
+            .Identifier, .String, .Number => try self.infixError(),
 
             // Keywords.
             .And => try self.and_(),
             .Or => try self.or_(),
-            .Class, .Else, .False, .For, .Fun, .If, .Nil => self.infixError(),
-            .Print, .Return, .Super, .This, .True, .Var, .While, .Error, .Eof => self.infixError(),
+            .Class, .Else, .False, .For, .Fun, .If, .Nil => try self.infixError(),
+            .Print, .Return, .Super, .This, .True, .Var, .While, .Error, .Eof => try self.infixError(),
         }
     }
 
@@ -842,7 +842,7 @@ pub const Parser = struct {
             try self.emitConstant(Value.fromNumber(value));
         } else |e| switch (e) {
             error.InvalidCharacter => {
-                self.err("Could not parse number");
+                try self.err("Could not parse number");
                 return;
             },
         }
@@ -853,7 +853,7 @@ pub const Parser = struct {
             .Nil => try self.emitOp(.Nil),
             .True => try self.emitOp(.True),
             .False => try self.emitOp(.False),
-            else => self.err("Unexpected literal"), // unreachable
+            else => try self.err("Unexpected literal"), // unreachable
         }
     }
 
@@ -872,7 +872,7 @@ pub const Parser = struct {
 
     fn this(self: *Parser) !void {
         if (self.currentClass == null) {
-            self.err("Cannot use 'this' outside of a class.");
+            try self.err("Cannot use 'this' outside of a class.");
             return;
         }
         try self.variable(false);
@@ -881,18 +881,18 @@ pub const Parser = struct {
     fn super(self: *Parser) !void {
         if (self.currentClass) |currentClass| {
             if (!currentClass.hasSuperclass) {
-                self.err("Cannot use 'super' in a class with no superclass.");
+                try self.err("Cannot use 'super' in a class with no superclass.");
             }
         } else {
-            self.err("Cannot use 'super' outside of a class.");
+            try self.err("Cannot use 'super' outside of a class.");
         }
 
-        self.consume(.Dot, "Expect '.' after 'super'.");
-        self.consume(.Identifier, "Expect superclass method name.");
+        try self.consume(.Dot, "Expect '.' after 'super'.");
+        try self.consume(.Identifier, "Expect superclass method name.");
         const name = try self.identifierConstant(self.previous.lexeme);
 
         try self.namedVariable("this", false);
-        if (self.match(.LeftParen)) {
+        if (try self.match(.LeftParen)) {
             const argCount = try self.argumentList();
             try self.namedVariable("super", false);
             try self.emitUnaryOp(.SuperInvoke, name);
@@ -907,7 +907,7 @@ pub const Parser = struct {
         var getOp: OpCode = undefined;
         var setOp: OpCode = undefined;
         var arg: u8 = undefined;
-        var resolvedArg = self.resolveLocal(self.compiler, name);
+        var resolvedArg = try self.resolveLocal(self.compiler, name);
 
         if (resolvedArg != -1) {
             arg = @intCast(u8, resolvedArg);
@@ -926,7 +926,7 @@ pub const Parser = struct {
             }
         }
 
-        if (canAssign and self.match(.Equal)) {
+        if (canAssign and (try self.match(.Equal))) {
             try self.expression();
             try self.emitUnaryOp(setOp, arg);
         } else {
@@ -936,7 +936,7 @@ pub const Parser = struct {
 
     fn grouping(self: *Parser) !void {
         try self.expression();
-        self.consume(.RightParen, "Expect ')' after expression.");
+        try self.consume(.RightParen, "Expect ')' after expression.");
     }
 
     fn unary(self: *Parser) !void {
@@ -949,7 +949,7 @@ pub const Parser = struct {
         switch (operatorType) {
             .Bang => try self.emitOp(.Not),
             .Minus => try self.emitOp(.Negate),
-            else => self.err("Unexpected unary operator"), // unreachable
+            else => try self.err("Unexpected unary operator"), // unreachable
         }
     }
 
@@ -980,7 +980,7 @@ pub const Parser = struct {
             .Minus => try self.emitOp(.Subtract),
             .Star => try self.emitOp(.Multiply),
             .Slash => try self.emitOp(.Divide),
-            else => self.err("Unexpected binary operator"), // unreachable
+            else => try self.err("Unexpected binary operator"), // unreachable
         }
     }
 
@@ -990,13 +990,13 @@ pub const Parser = struct {
     }
 
     fn dot(self: *Parser, canAssign: bool) !void {
-        self.consume(.Identifier, "Expect property name after '.'.");
+        try self.consume(.Identifier, "Expect property name after '.'.");
         const name = try self.identifierConstant(self.previous.lexeme);
 
-        if (canAssign and self.match(.Equal)) {
+        if (canAssign and try self.match(.Equal)) {
             try self.expression();
             try self.emitUnaryOp(.SetProperty, name);
-        } else if (self.match(.LeftParen)) {
+        } else if (try self.match(.LeftParen)) {
             const argCount = try self.argumentList();
             try self.emitUnaryOp(.Invoke, name);
             try self.emitByte(argCount);
@@ -1012,15 +1012,15 @@ pub const Parser = struct {
                 try self.expression();
 
                 if (argCount == 255) {
-                    self.err("Cannot have more than 255 arguments.");
+                    try self.err("Cannot have more than 255 arguments.");
                     break;
                 }
                 argCount += 1;
-                if (!self.match(.Comma)) break;
+                if (!try self.match(.Comma)) break;
             }
         }
 
-        self.consume(.RightParen, "Expect ')' after arguments.");
+        try self.consume(.RightParen, "Expect ')' after arguments.");
         return argCount;
     }
 };

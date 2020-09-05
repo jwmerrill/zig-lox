@@ -40,3 +40,4 @@
 - For object methods and/or fields, in the common case that there aren't very many entries, I wonder if it would be faster to use an associative array with linear scan compared to hash table. Could think about switching representations if an object ends up with too many.
   - What Wren does here is keep a table of all strings that are used as method names, and then each class has a MethodBuffer array of the corresponding method for the class. Costs memory per class, but allows fast method lookup.
 - For globals, could possibly make sense to use an array of the same size as the set of interned strings.
+- What happens if WASM extern functions (like writeOut, writeErr, or now) fail?

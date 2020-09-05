@@ -19,6 +19,10 @@ release:
 wasi:
 	zig build-exe src/main.zig -target wasm32-wasi --output-dir build --name lox-repl --release-small
 
+.PHONY: wasm
+wasm:
+	zig build-lib src/main_wasm_freestanding.zig -target wasm32-freestanding --output-dir build
+
 test: lox
 	mkdir -p craftinginterpreters/build
 	cp bin/lox craftinginterpreters/build/cloxd

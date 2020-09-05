@@ -11,6 +11,8 @@ const Obj = @import("./object.zig").Obj;
 const Table = @import("./table.zig").Table;
 const FixedCapacityStack = @import("./stack.zig").FixedCapacityStack;
 const GCAllocator = @import("./memory.zig").GCAllocator;
+const VMOutStream = @import("./writer.zig").VMOutStream;
+const clock = @import("./native.zig").clock;
 
 fn add(x: f64, y: f64) f64 {
     return x + y;
@@ -26,10 +28,6 @@ fn mul(x: f64, y: f64) f64 {
 
 fn div(x: f64, y: f64) f64 {
     return x / y;
-}
-
-fn clockNative(args: []const Value) Value {
-    return Value.fromNumber(@intToFloat(f64, std.time.milliTimestamp()) / 1000);
 }
 
 const CallFrame = struct {
@@ -53,6 +51,8 @@ pub const VM = struct {
     globals: Table,
     parser: ?*Parser,
     grayStack: ArrayList(*Obj),
+    outStream: VMOutStream,
+    errStream: VMOutStream,
 
     pub fn create() VM {
         var vm = VM{
@@ -67,12 +67,14 @@ pub const VM = struct {
             .globals = undefined,
             .parser = null,
             .grayStack = undefined,
+            .outStream = undefined,
+            .errStream = undefined,
         };
 
         return vm;
     }
 
-    pub fn init(self: *VM, backingAllocator: *Allocator) !void {
+    pub fn init(self: *VM, backingAllocator: *Allocator, outStream: VMOutStream, errStream: VMOutStream) !void {
         self.gcAllocatorInstance = GCAllocator.init(self, backingAllocator);
         const allocator = &self.gcAllocatorInstance.allocator;
 
@@ -87,11 +89,13 @@ pub const VM = struct {
         self.frames = std.ArrayList(CallFrame).init(allocator);
         self.strings = Table.init(allocator);
         self.globals = Table.init(allocator);
+        self.outStream = outStream;
+        self.errStream = errStream;
 
         // These ops all allocate
         self.stack = try FixedCapacityStack(Value).init(backingAllocator, STACK_MAX);
         self.initString = try Obj.String.copy(self, "init");
-        try self.defineNative("clock", clockNative);
+        try self.defineNative("clock", clock);
     }
 
     pub fn deinit(self: *VM) void {
@@ -284,8 +288,7 @@ pub const VM = struct {
                 try self.defineMethod(self.readString());
             },
             .Print => {
-                const stdout = std.io.getStdOut().outStream();
-                try stdout.print("{}\n", .{self.pop()});
+                try self.outStream.print("{}\n", .{self.pop()});
             },
             .Jump => {
                 const offset = self.readShort();
@@ -614,15 +617,15 @@ pub const VM = struct {
     fn runtimeError(self: *VM, comptime message: []const u8, args: var) !void {
         @setCold(true);
 
-        std.debug.warn(message, args);
-        std.debug.warn("\n", .{});
+        try self.errStream.print(message, args);
+        try self.errStream.print("\n", .{});
 
         while (self.frames.items.len > 0) {
             const frame = self.frames.pop();
             const function = frame.closure.function;
             const line = function.chunk.lines.items[frame.ip - 1];
             const name = if (function.name) |str| str.bytes else "<script>";
-            std.debug.warn("[line {}] in {}\n", .{ line, name });
+            try self.errStream.print("[line {}] in {}\n", .{ line, name });
         }
 
         return error.RuntimeError;
