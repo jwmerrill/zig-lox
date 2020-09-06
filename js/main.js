@@ -5,7 +5,7 @@ const source = fs.readFileSync(
 );
 const typedArray = new Uint8Array(source);
 
-var wasm;
+let wasm;
 WebAssembly.instantiate(typedArray, {
   env: {
     writeOut: (ptr, len) => {
@@ -17,10 +17,21 @@ WebAssembly.instantiate(typedArray, {
     now: () => Date.now()
   },
 }).then((result) => {
-  wasm = result.instance.exports;
-  const source = 'print clock();';
-  runSource(wasm, source)
+  wasm = result.instance.exports
+  main(wasm);
 });
+
+function main(wasm) {
+  switch (process.argv.length) {
+    case 3: {
+      runSource(wasm, fs.readFileSync(process.argv[2], {encoding: 'utf-8'}));
+    }
+    default: {
+      process.stdout.write('Usage: node main.js [path]\n');
+      process.exit(1);
+    }
+  }
+}
 
 function runSource(wasm, source) {
   // convert source to Uint8Array
