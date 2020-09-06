@@ -41,9 +41,9 @@ export fn run(input_ptr: [*]const u8, input_len: usize) usize {
     return 0;
 }
 
-pub export fn alloc(len: usize) u32 {
+pub export fn alloc(len: usize) usize {
     var buf = allocator.alloc(u8, len) catch |err| return 0;
-    return @intCast(u32, @ptrToInt(buf.ptr));
+    return @ptrToInt(buf.ptr);
 }
 
 pub export fn dealloc(ptr: [*]const u8, len: usize) void {
