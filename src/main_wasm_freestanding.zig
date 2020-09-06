@@ -21,17 +21,33 @@ fn writeErrSlice(bytes: []const u8) void {
     writeErr(@ptrToInt(bytes.ptr), bytes.len);
 }
 
-export fn run(input_ptr: [*]const u8, input_len: usize) usize {
+fn createVMPtr() !*VM {
+    // Note, important that outStream holds ExternalWriter instance by
+    // value, and not by reference, since a reference to the external
+    // writer would be invalidated when this function exits. That
+    // mistake caught me out earlier.
     const outStream = ExternalWriter.init(writeOutSlice).outStream();
     const errStream = ExternalWriter.init(writeErrSlice).outStream();
 
-    var vm = VM.create();
-    vm.init(allocator, outStream, errStream) catch |err| {
-        return 71;
-    };
-    defer vm.deinit();
+    var vm = try allocator.create(VM);
+    vm.* = VM.create();
+    try vm.init(allocator, outStream, errStream);
+    return vm;
+}
 
+export fn createVM() usize {
+    var vm = createVMPtr() catch return 0;
+    return @ptrToInt(vm);
+}
+
+export fn destroyVM(vm: *VM) void {
+    vm.deinit();
+    allocator.destroy(vm);
+}
+
+export fn interpret(vm: *VM, input_ptr: [*]const u8, input_len: usize) usize {
     const source = input_ptr[0..input_len];
+
     vm.interpret(source) catch |err| switch (err) {
         error.CompileError => return 65,
         error.RuntimeError => return 70,
@@ -41,8 +57,14 @@ export fn run(input_ptr: [*]const u8, input_len: usize) usize {
     return 0;
 }
 
+export fn run(input_ptr: [*]const u8, input_len: usize) usize {
+    var vm = createVMPtr() catch return 71;
+    defer destroyVM(vm);
+    return interpret(vm, input_ptr, input_len);
+}
+
 pub export fn alloc(len: usize) usize {
-    var buf = allocator.alloc(u8, len) catch |err| return 0;
+    var buf = allocator.alloc(u8, len) catch return 0;
     return @ptrToInt(buf.ptr);
 }
 

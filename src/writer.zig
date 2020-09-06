@@ -11,13 +11,13 @@ pub const ExternalWriter = struct {
 
     pub const WriteError = error{};
 
-    pub fn write(self: *ExternalWriter, bytes: []const u8) WriteError!usize {
+    pub fn write(self: ExternalWriter, bytes: []const u8) WriteError!usize {
         self.writeFn(bytes);
         return bytes.len;
     }
 
-    pub const OutStream = std.io.OutStream(*ExternalWriter, WriteError, write);
-    pub fn outStream(self: *ExternalWriter) OutStream {
+    pub const OutStream = std.io.OutStream(ExternalWriter, WriteError, write);
+    pub fn outStream(self: ExternalWriter) OutStream {
         return .{ .context = self };
     }
 };
