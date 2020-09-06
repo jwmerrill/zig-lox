@@ -41,6 +41,6 @@
   - What Wren does here is keep a table of all strings that are used as method names, and then each class has a MethodBuffer array of the corresponding method for the class. Costs memory per class, but allows fast method lookup.
 - For globals, could possibly make sense to use an array of the same size as the set of interned strings.
 - What happens if WASM extern functions (like writeOut, writeErr, or now) fail?
-- Modify WASM lib to support a repl mode, where commands are executed one by one.
-- Update node executable to allow taking a file to execute, like the standard main function does
+- [x] Modify WASM lib to support a repl mode, where commands are executed one by one.
+- [x] Update node executable to allow taking a file to execute, like the standard main function does
 - Add a web frontend to the WASM module
