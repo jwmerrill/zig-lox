@@ -4,7 +4,7 @@ var outputElt = document.getElementById('output');
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-WebAssembly.instantiateStreaming(fetch('./build/wasm-lib.wasm'), {
+const importObject = {
   env: {
     writeOut: (ptr, len) => {
       outputElt.innerText += decoder.decode(
@@ -18,10 +18,19 @@ WebAssembly.instantiateStreaming(fetch('./build/wasm-lib.wasm'), {
     },
     now: () => Date.now(),
   },
-}).then((result) => {
-  wasm = result.instance.exports;
-  main(wasm);
-});
+};
+
+// Note, could convert to WebAssembly.instantiateStreaming once Safari
+// gets support for that
+//
+// Ref: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WebAssembly/instantiateStreaming
+fetch('./build/wasm-lib.wasm')
+  .then((response) => response.arrayBuffer())
+  .then((bytes) => WebAssembly.instantiate(bytes, importObject))
+  .then((result) => {
+    wasm = result.instance.exports;
+    main(wasm);
+  });
 
 function main(wasm) {
   // Create a lox VM

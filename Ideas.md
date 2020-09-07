@@ -45,3 +45,4 @@
 - [x] Update node executable to allow taking a file to execute, like the standard main function does
 - [x] Add a web frontend to the WASM module
 - Right now, all VMs write output and errors to the same place (stdin/stderr for native, and the writeOut/writeErr functions for WASM freestanding). Since we allow creating multiple VMs, it might be nice if there was a way to specify output streams per vm. For WASM, could pass a pointer to the VM to the writeOut/writeErr functions to identify which VM is producing output, but is there some cleaner way?
+- Package the WASM lib up as an npm package to be used in node. Not feeling super motivated to do this at the moment because the requirement to load web assembly asynchronously interacts poorly with node's commonJS module system. There is [experimental support](https://nodejs.org/api/esm.html#esm_experimental_wasm_modules) for an improved workflow using ES Modules, but it seems like things are still kind of in flux there.

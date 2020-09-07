@@ -64,7 +64,9 @@ node js/main.js examples/arithmetic.lox
 
 ## Web REPL
 
-A simple web REPL powered by the WASM library is available in the `www` directory. To run the web REPL, run
+A simple web REPL powered by the WASM library is available in the `www` directory. [Try it live](https://www.shapeoperator.com/toys/lox-repl/).
+
+To run the web REPL locally, run
 
 ```
 make www-server
