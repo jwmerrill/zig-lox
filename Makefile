@@ -21,11 +21,11 @@ wasi:
 
 .PHONY: wasm
 wasm:
-	zig build-lib src/main_wasm_freestanding.zig -target wasm32-freestanding --output-dir build --release-small
+	zig build-lib src/wasm-lib.zig -target wasm32-freestanding --output-dir build --release-small
 
 .PHONY: www
 www: wasm
-	cp build/main_wasm_freestanding.wasm www/build/
+	cp build/wasm-lib.wasm www/build/
 
 .PHONY: www-server
 www-server: www

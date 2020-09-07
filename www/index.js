@@ -4,6 +4,51 @@ var outputElt = document.getElementById('output');
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
+WebAssembly.instantiateStreaming(fetch('./build/wasm-lib.wasm'), {
+  env: {
+    writeOut: (ptr, len) => {
+      outputElt.innerText += decoder.decode(
+        new Uint8Array(wasm.memory.buffer.slice(ptr, ptr + len))
+      );
+    },
+    writeErr: (ptr, len) => {
+      outputElt.innerText += decoder.decode(
+        new Uint8Array(wasm.memory.buffer.slice(ptr, ptr + len))
+      );
+    },
+    now: () => Date.now(),
+  },
+}).then((result) => {
+  wasm = result.instance.exports;
+  main(wasm);
+});
+
+function main(wasm) {
+  // Create a lox VM
+  var vm = wasm.createVM();
+
+  // Evaluate a JS string in the lox vm
+  function interpretString(str) {
+    var slice = allocateString(wasm, str);
+    wasm.interpret(vm, slice.ptr, slice.len);
+    wasm.dealloc(slice.ptr, slice.len);
+  }
+
+  inputElt.addEventListener('keydown', (evt) => {
+    if (evt.key === 'Enter') {
+      evt.preventDefault();
+
+      // Move current input to the output display
+      var value = inputElt.value;
+      outputElt.innerText += ['> ', value, '\n'].join('');
+      inputElt.value = '';
+
+      // Intepret input, printing any outputs to the display
+      interpretString(value);
+    }
+  });
+}
+
 function allocateString(wasm, str) {
   // convert source to Uint8Array
   const sourceArray = encoder.encode(str);
@@ -22,46 +67,3 @@ function allocateString(wasm, str) {
 
   return { ptr, len };
 }
-
-function main(wasm) {
-  var vm = wasm.createVM();
-  function interpretString(str) {
-    var slice = allocateString(wasm, str);
-    wasm.interpret(vm, slice.ptr, slice.len);
-    wasm.dealloc(slice.ptr, slice.len);
-  }
-
-  inputElt.addEventListener('keydown', (evt) => {
-    if (evt.key === 'Enter') {
-      var value = inputElt.value;
-      evt.preventDefault();
-      outputElt.innerText += ['> ', value, '\n'].join('');
-      inputElt.value = '';
-
-      interpretString(value);
-    }
-  });
-}
-
-function decode(arr) {
-  return decoder.decode(arr);
-}
-
-WebAssembly.instantiateStreaming(fetch('./build/main_wasm_freestanding.wasm'), {
-  env: {
-    writeOut: (ptr, len) => {
-      outputElt.innerText += decode(
-        new Uint8Array(wasm.memory.buffer.slice(ptr, ptr + len))
-      );
-    },
-    writeErr: (ptr, len) => {
-      outputElt.innerText += decode(
-        new Uint8Array(wasm.memory.buffer.slice(ptr, ptr + len))
-      );
-    },
-    now: () => Date.now(),
-  },
-}).then((result) => {
-  wasm = result.instance.exports;
-  main(wasm);
-});

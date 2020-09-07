@@ -28,7 +28,7 @@ Before running tests the first time, run
 make setup
 ```
 
-To run tests, run
+(note that this requires Python 2.7 to be installed on your system). To run tests, run
 
 ```
 make test
@@ -41,6 +41,36 @@ Note, `test/for/closure_in_body.lox` is currently expected to fail because closu
 Running `make` creates a debug build of zig-lox at `bin/lox`.
 
 To create a release build, run `make release`.
+
+## Web Assembly
+
+`zig-lox` can be compiled to a freestanding Web Assembly (WASM) library to run in a web browser or in node. Running
+
+```
+make wasm
+```
+
+will create a build at `build/wasm-lib.wasm`. An example of using the WASM library through node is provided in `js/main.js`. Similarly to the `lox` binary, this provides a REPL through
+
+```
+node js/main.js
+```
+
+and can execute a specified lox source file, for example:
+
+```
+node js/main.js examples/arithmetic.lox
+```
+
+## Web REPL
+
+A simple web REPL powered by the WASM library is available in the `www` directory. To run the web REPL, run
+
+```
+make www-server
+```
+
+(note, requires Python 3 to be available), and visit `localhost:8000`.
 
 ## Experimental WASI build
 
@@ -80,4 +110,4 @@ Complete.
 
 [Crafting Interpreters source code](https://github.com/munificent/craftinginterpreters)
 
-I've taken a lot of inspiration from [zox](https://github.com/raulgrell/zox), an earlier Zig implementation. That project demonstrates creating a wasm build of the lox interpreter and running it on a web page.
+I've taken a lot of inspiration from [zox](https://github.com/raulgrell/zox), an earlier Zig implementation.

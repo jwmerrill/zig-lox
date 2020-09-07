@@ -43,4 +43,5 @@
 - What happens if WASM extern functions (like writeOut, writeErr, or now) fail?
 - [x] Modify WASM lib to support a repl mode, where commands are executed one by one.
 - [x] Update node executable to allow taking a file to execute, like the standard main function does
-- Add a web frontend to the WASM module
+- [x] Add a web frontend to the WASM module
+- Right now, all VMs write output and errors to the same place (stdin/stderr for native, and the writeOut/writeErr functions for WASM freestanding). Since we allow creating multiple VMs, it might be nice if there was a way to specify output streams per vm. For WASM, could pass a pointer to the VM to the writeOut/writeErr functions to identify which VM is producing output, but is there some cleaner way?
