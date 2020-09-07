@@ -21,7 +21,15 @@ wasi:
 
 .PHONY: wasm
 wasm:
-	zig build-lib src/main_wasm_freestanding.zig -target wasm32-freestanding --output-dir build
+	zig build-lib src/main_wasm_freestanding.zig -target wasm32-freestanding --output-dir build --release-small
+
+.PHONY: www
+www: wasm
+	cp build/main_wasm_freestanding.wasm www/build/
+
+.PHONY: www-server
+www-server: www
+	cd www && python3 -m http.server
 
 test: lox
 	mkdir -p craftinginterpreters/build

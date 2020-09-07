@@ -1,5 +1,6 @@
 /zig-cache
 /bin
 /build
+/www/build
 
 wapm_packages

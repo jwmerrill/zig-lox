@@ -1,0 +1,22 @@
+body {
+  box-sizing: border-box;
+}
+
+#output {
+  height: 20rem;
+  width: 40rem;
+  max-width: 97%;
+  border: 1px solid #333;
+  border-radius: 2px;
+  display: block;
+  padding: 3px;
+}
+
+#input {
+  width: 40rem;
+  max-width: 97%;
+}
+
+pre {
+  margin-bottom: 0px;
+}
