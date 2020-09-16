@@ -174,7 +174,7 @@ pub const Chunk = struct {
         std.debug.warn("{} {} {}\n", .{ name, constant, self.constants.items[constant] });
 
         // Disassemble upvalues
-        const function = self.constants.items[constant].Obj.asFunction();
+        const function = self.constants.items[constant].asObj().asFunction();
         var i: usize = 0;
         while (i < function.upvalueCount) : (i += 1) {
             const isLocal = self.code.items[offset] != 1;
