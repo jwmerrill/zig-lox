@@ -10,7 +10,7 @@ body {
   border-radius: 2px;
   display: block;
   padding: 3px;
-  overflow: scroll;
+  overflow: auto;
 }
 
 #input {
