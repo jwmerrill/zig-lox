@@ -10,11 +10,13 @@ const importObject = {
       outputElt.innerText += decoder.decode(
         new Uint8Array(wasm.memory.buffer.slice(ptr, ptr + len))
       );
+      outputElt.scrollTop = outputElt.scrollHeight;
     },
     writeErr: (ptr, len) => {
       outputElt.innerText += decoder.decode(
         new Uint8Array(wasm.memory.buffer.slice(ptr, ptr + len))
       );
+      outputElt.scrollTop = outputElt.scrollHeight;
     },
     now: () => Date.now(),
   },
@@ -50,6 +52,7 @@ function main(wasm) {
       // Move current input to the output display
       var value = inputElt.value;
       outputElt.innerText += ['> ', value, '\n'].join('');
+      outputElt.scrollTop = outputElt.scrollHeight;
       inputElt.value = '';
 
       // Intepret input, printing any outputs to the display
