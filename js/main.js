@@ -3,7 +3,7 @@ const path = require('path');
 const readline = require('readline');
 
 const source = fs.readFileSync(
-  path.join(__dirname, '..', 'build/zig-lox-freestanding.wasm')
+  path.join(__dirname, '..', 'build/wasm-lib.wasm')
 );
 const typedArray = new Uint8Array(source);
 
