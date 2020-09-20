@@ -1,3 +1,12 @@
+# NOTE, purposely skipping test/for/closure_in_body.lox because zig-lox
+# handles closuring induction variable differently than clox
+TEST_FILES=`find craftinginterpreters/test -name "*.lox" \
+  | grep -v test/benchmark \
+	| grep -v test/scanning \
+	| grep -v test/expressions \
+	| grep -v test/for/closure_in_body.lox \
+	`
+
 all: lox
 
 .PHONY: clean
@@ -31,11 +40,18 @@ www: wasm
 www-server: www
 	cd www && python3 -m http.server
 
-test: lox
+setup-book:
+	git submodule update --init
+	cd craftinginterpreters && make setup
+
+# Run tests using book's test harness instead of the custom zig harness
+#
+# NOTE, must run `make setup-book` once before running this
+# NOTE, test/for/closure_in_body.lox is expected to fail
+test-book: lox
 	mkdir -p craftinginterpreters/build
 	cp bin/lox craftinginterpreters/build/cloxd
 	cd craftinginterpreters && ./util/test.py clox
 
-setup:
-	git submodule update --init
-	cd craftinginterpreters && make setup
+test: lox
+	zig run util/test.zig -- bin/lox $(TEST_FILES)

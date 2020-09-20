@@ -28,7 +28,7 @@ Before running tests the first time, run
 make setup
 ```
 
-(note that this requires Python 2.7 to be installed on your system). To run tests, run
+To run tests, run
 
 ```
 make test

@@ -3,7 +3,6 @@ const io = std.io;
 const process = std.process;
 const Allocator = std.mem.Allocator;
 
-const Chunk = @import("./chunk.zig").Chunk;
 const VM = @import("./vm.zig").VM;
 const debug = @import("./debug.zig");
 
