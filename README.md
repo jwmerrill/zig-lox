@@ -20,21 +20,13 @@ zig run src/main.zig -- examples/arithmetic.lox
 
 ## Running tests
 
-This project includes the crafting interpreters book repository as a submodule to allow running its tests.
-
-Before running tests the first time, run
-
-```
-make setup
-```
-
 To run tests, run
 
 ```
 make test
 ```
 
-Note, `test/for/closure_in_body.lox` is currently expected to fail because closuring in the induction variable in a for loop is working differently here than in the book.
+This runs the tests from the book using a test harness written in Zig. Note that `test/for/closure_in_body.lox` is currently skipped because closuring the induction variable of a loop works differently in zig-lox than in clox.
 
 ## Building
 
