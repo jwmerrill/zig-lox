@@ -1,7 +1,7 @@
 # NOTE, purposely skipping test/for/closure_in_body.lox because zig-lox
 # handles closuring induction variable differently than clox
 TEST_FILES=`find test -name "*.lox" \
-  | grep -v test/benchmark \
+	| grep -v test/benchmark \
 	| grep -v test/scanning \
 	| grep -v test/expressions \
 	| grep -v test/for/closure_in_body.lox \
