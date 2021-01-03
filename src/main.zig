@@ -9,7 +9,6 @@ const debug = @import("./debug.zig");
 pub fn main() !void {
     const allocator = init: {
         if (comptime debug.TESTING_ALLOCATOR) {
-            defer std.testing.allocator_instance.validate() catch unreachable;
             break :init std.testing.allocator;
         } else if (comptime std.Target.current.isWasm()) {
             // TODO, this allocator is very inefficient
@@ -29,7 +28,7 @@ pub fn main() !void {
             1 => try repl(allocator),
             2 => try runFile(allocator, args[1]),
             else => {
-                std.debug.warn("Usage: clox [path]\n", .{});
+                std.debug.warn("Usage: lox [path]\n", .{});
                 process.exit(64);
             },
         }

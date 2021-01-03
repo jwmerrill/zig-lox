@@ -77,7 +77,7 @@ pub const NanBoxedValue = packed struct {
         return self.data == other.data;
     }
 
-    pub fn format(self: NanBoxedValue, comptime fmt: []const u8, options: std.fmt.FormatOptions, out_stream: var) !void {
+    pub fn format(self: NanBoxedValue, comptime fmt: []const u8, options: std.fmt.FormatOptions, out_stream: anytype) !void {
         if (self.isNumber()) {
             try out_stream.print("{d}", .{self.asNumber()});
         } else if (self.isBool()) {
@@ -182,7 +182,7 @@ pub const UnionValue = union(enum) {
         };
     }
 
-    pub fn format(self: UnionValue, comptime fmt: []const u8, options: std.fmt.FormatOptions, out_stream: var) !void {
+    pub fn format(self: UnionValue, comptime fmt: []const u8, options: std.fmt.FormatOptions, out_stream: anytype) !void {
         switch (self) {
             .Number => |value| try out_stream.print("{d}", .{value}),
             .Bool => |value| try out_stream.print("{}", .{value}),
@@ -193,7 +193,7 @@ pub const UnionValue = union(enum) {
 };
 
 // Shared between the two value representations
-fn printObject(obj: *Obj, out_stream: var) !void {
+fn printObject(obj: *Obj, out_stream: anytype) !void {
     switch (obj.objType) {
         .String => try out_stream.print("{}", .{obj.asString().bytes}),
         .Function => {

@@ -20,8 +20,8 @@ pub const GCAllocator = struct {
         return GCAllocator{
             .vm = vm,
             .allocator = Allocator{
-                .reallocFn = realloc,
-                .shrinkFn = shrink,
+                .allocFn = alloc,
+                .resizeFn = resize,
             },
             .backing_allocator = backing_allocator,
             .bytesAllocated = 0,
@@ -29,32 +29,38 @@ pub const GCAllocator = struct {
         };
     }
 
-    fn realloc(allocator: *Allocator, old_mem: []u8, old_align: u29, new_size: usize, new_align: u29) std.mem.Allocator.Error![]u8 {
+    fn alloc(allocator: *Allocator, len: usize, ptr_align: u29, len_align: u29, ret_addr: usize) std.mem.Allocator.Error![]u8 {
         const self = @fieldParentPtr(GCAllocator, "allocator", allocator);
 
-        // TODO should we only update this if backing_allocator reallocFn succeeds?
-        if (new_size > old_mem.len) {
-            self.bytesAllocated += new_size - old_mem.len;
-        } else {
-            self.bytesAllocated -= old_mem.len - new_size;
+        if ((self.bytesAllocated + len > self.nextGC) or debug.STRESS_GC) {
+            try self.collectGarbage();
         }
 
-        if (new_size > old_mem.len) {
-            if (self.bytesAllocated > self.nextGC or debug.STRESS_GC) {
+        var out = try self.backing_allocator.allocFn(self.backing_allocator, len, ptr_align, len_align, ret_addr);
+
+        self.bytesAllocated += out.len;
+
+        return out;
+    }
+
+    fn resize(allocator: *Allocator, buf: []u8, buf_align: u29, new_len: usize, len_align: u29, ret_addr: usize) std.mem.Allocator.Error!usize {
+        const self = @fieldParentPtr(GCAllocator, "allocator", allocator);
+
+        if (new_len > buf.len) {
+            if ((self.bytesAllocated + (new_len - buf.len) > self.nextGC) or debug.STRESS_GC) {
                 try self.collectGarbage();
             }
         }
 
-        return try self.backing_allocator.reallocFn(self.backing_allocator, old_mem, old_align, new_size, new_align);
-    }
+        const out = try self.backing_allocator.resizeFn(self.backing_allocator, buf, buf_align, new_len, len_align, ret_addr);
 
-    fn shrink(allocator: *Allocator, old_mem: []u8, old_align: u29, new_size: usize, new_align: u29) []u8 {
-        const self = @fieldParentPtr(GCAllocator, "allocator", allocator);
+        if (out > buf.len) {
+            self.bytesAllocated += out - buf.len;
+        } else {
+            self.bytesAllocated -= buf.len - out;
+        }
 
-        // NOTE, new_size is guaranteed to be less than old_mem.len
-        self.bytesAllocated -= old_mem.len - new_size;
-
-        return self.backing_allocator.shrinkFn(self.backing_allocator, old_mem, old_align, new_size, new_align);
+        return out;
     }
 
     fn collectGarbage(self: *GCAllocator) !void {
@@ -135,7 +141,7 @@ pub const GCAllocator = struct {
 
     fn blackenObject(self: *GCAllocator, obj: *Obj) !void {
         if (debug.LOG_GC) {
-            std.debug.warn("{} blacken {}\n", .{@ptrToInt(obj), obj.value()});
+            std.debug.warn("{} blacken {}\n", .{ @ptrToInt(obj), obj.value() });
         }
 
         switch (obj.objType) {
@@ -185,7 +191,7 @@ pub const GCAllocator = struct {
         if (obj.isMarked) return;
 
         if (debug.LOG_GC) {
-            std.debug.warn("{} mark {}\n", .{@ptrToInt(obj), obj.value()});
+            std.debug.warn("{} mark {}\n", .{ @ptrToInt(obj), obj.value() });
         }
 
         obj.isMarked = true;

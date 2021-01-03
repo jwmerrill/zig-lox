@@ -392,7 +392,7 @@ pub const VM = struct {
         }
     }
 
-    fn binaryNumericOp(self: *VM, comptime op: var) !void {
+    fn binaryNumericOp(self: *VM, comptime op: anytype) !void {
         const rhs = self.pop();
         const lhs = self.pop();
         if (!lhs.isNumber() or !rhs.isNumber()) {
@@ -450,7 +450,7 @@ pub const VM = struct {
         return (@intCast(u16, items[frame.ip - 2]) << 8) | items[frame.ip - 1];
     }
 
-    fn push(self: *VM, value: Value) void {
+    pub fn push(self: *VM, value: Value) void {
         self.stack.append(value);
     }
 
@@ -458,7 +458,7 @@ pub const VM = struct {
         return self.stack.items[self.stack.items.len - 1 - back];
     }
 
-    fn pop(self: *VM) Value {
+    pub fn pop(self: *VM) Value {
         return self.stack.pop();
     }
 
@@ -614,7 +614,7 @@ pub const VM = struct {
         std.debug.warn("\n", .{});
     }
 
-    fn runtimeError(self: *VM, comptime message: []const u8, args: var) !void {
+    fn runtimeError(self: *VM, comptime message: []const u8, args: anytype) !void {
         @setCold(true);
 
         try self.errStream.print(message, args);
