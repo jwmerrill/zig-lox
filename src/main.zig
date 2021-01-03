@@ -28,7 +28,7 @@ pub fn main() !void {
             1 => try repl(allocator),
             2 => try runFile(allocator, args[1]),
             else => {
-                std.debug.warn("Usage: clox [path]\n", .{});
+                std.debug.warn("Usage: lox [path]\n", .{});
                 process.exit(64);
             },
         }
