@@ -14,7 +14,7 @@ clean:
 	rm -rf bin/*
 	rm -rf build/*
 	rm -rf zig-cache
-	cd craftinginterpreters && make clean
+	rm -rf src/zig-cache
 
 .PHONY: directories
 	mkdir -p build
