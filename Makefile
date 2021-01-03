@@ -16,6 +16,9 @@ clean:
 	rm -rf zig-cache
 	cd craftinginterpreters && make clean
 
+.PHONY: directories
+	mkdir -p build
+
 .PHONY: lox
 lox:
 	zig build --prefix '.'
@@ -25,12 +28,14 @@ release:
 	zig build --prefix '.' -Drelease-fast=true
 
 .PHONY: wasi
-wasi:
-	zig build-exe src/main.zig -target wasm32-wasi --output-dir build --name lox-repl --release-small
+wasi: directories
+	cd build && \
+	zig build-exe ../src/main.zig -target wasm32-wasi --name lox-repl -O ReleaseSmall
 
 .PHONY: wasm
-wasm:
-	zig build-lib src/wasm-lib.zig -target wasm32-freestanding --output-dir build --release-small
+wasm: directories
+	cd build && \
+	zig build-lib ../src/wasm-lib.zig -target wasm32-freestanding -O ReleaseSmall
 
 .PHONY: www
 www: wasm
