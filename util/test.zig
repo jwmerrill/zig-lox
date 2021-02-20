@@ -109,7 +109,7 @@ fn parse_test_file(test_path: []const u8) !Expected {
             exit_code = 65;
             i += error_prefix.len;
             const j = std.mem.indexOfScalarPos(u8, source, i, '\n') orelse source.len;
-            try compile_error_buffer.outStream().print("[line {}] Error", .{line});
+            try compile_error_buffer.writer().print("[line {}] Error", .{line});
             try compile_error_buffer.appendSlice(source[i..j]);
             try compile_error_buffer.append('\n');
             i = j;
@@ -135,7 +135,7 @@ fn parse_test_file(test_path: []const u8) !Expected {
             const j = std.mem.indexOfScalarPos(u8, source, i, '\n') orelse source.len;
             try runtime_error_buffer.appendSlice(source[i..j]);
             // Append start of stack trace to runtime error message
-            try runtime_error_buffer.outStream().print("\n[line {}]", .{line});
+            try runtime_error_buffer.writer().print("\n[line {}]", .{line});
             i = j;
         }
 

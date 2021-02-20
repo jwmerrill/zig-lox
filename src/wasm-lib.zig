@@ -22,16 +22,16 @@ fn writeErrSlice(bytes: []const u8) void {
 }
 
 fn createVMPtr() !*VM {
-    // Note, important that outStream holds ExternalWriter instance by
+    // Note, important that outWriter holds ExternalWriter instance by
     // value, and not by reference, since a reference to the external
     // writer would be invalidated when this function exits. That
     // mistake caught me out earlier.
-    const outStream = ExternalWriter.init(writeOutSlice).outStream();
-    const errStream = ExternalWriter.init(writeErrSlice).outStream();
+    const outWriter = ExternalWriter.init(writeOutSlice).writer();
+    const errWriter = ExternalWriter.init(writeErrSlice).writer();
 
     var vm = try allocator.create(VM);
     vm.* = VM.create();
-    try vm.init(allocator, outStream, errStream);
+    try vm.init(allocator, outWriter, errWriter);
     return vm;
 }
 

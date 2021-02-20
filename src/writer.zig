@@ -16,10 +16,10 @@ pub const ExternalWriter = struct {
         return bytes.len;
     }
 
-    pub const OutStream = std.io.OutStream(ExternalWriter, WriteError, write);
-    pub fn outStream(self: ExternalWriter) OutStream {
+    pub const Writer = std.io.Writer(ExternalWriter, WriteError, write);
+    pub fn writer(self: ExternalWriter) Writer {
         return .{ .context = self };
     }
 };
 
-pub const VMOutStream = comptime if (env.IS_WASM_FREESTANDING) ExternalWriter.OutStream else File.OutStream;
+pub const VMWriter = comptime if (env.IS_WASM_FREESTANDING) ExternalWriter.Writer else File.Writer;

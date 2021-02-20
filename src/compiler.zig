@@ -220,19 +220,19 @@ pub const Parser = struct {
         if (self.panicMode) return;
         self.panicMode = true;
 
-        try self.vm.errStream.print("[line {}] Error", .{token.line});
+        try self.vm.errWriter.print("[line {}] Error", .{token.line});
 
         switch (token.tokenType) {
             .Eof => {
-                try self.vm.errStream.print(" at end", .{});
+                try self.vm.errWriter.print(" at end", .{});
             },
             .Error => {},
             else => {
-                try self.vm.errStream.print(" at '{}'", .{token.lexeme});
+                try self.vm.errWriter.print(" at '{}'", .{token.lexeme});
             },
         }
 
-        try self.vm.errStream.print(": {}\n", .{message});
+        try self.vm.errWriter.print(": {}\n", .{message});
 
         self.hadError = true;
     }
