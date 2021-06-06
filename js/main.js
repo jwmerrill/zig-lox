@@ -56,6 +56,11 @@ function repl(wasm) {
   rl.prompt();
 
   rl.on('line', (line) => {
+    if (line.length === 0) {
+      rl.prompt();
+      return;
+    }
+
     // Transfer line to WASM memory
     var slice = allocateString(wasm, line);
 
@@ -69,6 +74,7 @@ function repl(wasm) {
       case 0: // Success
       case 65: // Compile error
       case 70: // Runtime error
+        rl.prompt();
         break;
       default: {
         // Other errors

@@ -188,7 +188,7 @@ pub const VM = struct {
                 const name = self.readString();
                 var value: Value = undefined;
                 if (!self.globals.get(name, &value)) {
-                    return self.runtimeError("Undefined variable '{}'.", .{name.bytes});
+                    return self.runtimeError("Undefined variable '{s}'.", .{name.bytes});
                 }
                 self.push(value);
             },
@@ -203,7 +203,7 @@ pub const VM = struct {
                 const name = self.readString();
                 if (try self.globals.set(name, self.peek(0))) {
                     _ = self.globals.delete(name);
-                    return self.runtimeError("Undefined variable '{}'.", .{name.bytes});
+                    return self.runtimeError("Undefined variable '{s}'.", .{name.bytes});
                 }
             },
             .GetUpvalue => {
@@ -542,7 +542,7 @@ pub const VM = struct {
     fn invokeFromClass(self: *VM, class: *Obj.Class, name: *Obj.String, argCount: u8) !void {
         var method: Value = undefined;
         if (!class.methods.get(name, &method)) {
-            return self.runtimeError("Undefined property '{}'.", .{name.bytes});
+            return self.runtimeError("Undefined property '{s}'.", .{name.bytes});
         }
 
         return self.call(method.asObj().asClosure(), argCount);
@@ -551,7 +551,7 @@ pub const VM = struct {
     fn bindMethod(self: *VM, class: *Obj.Class, name: *Obj.String) !void {
         var method: Value = undefined;
         if (!class.methods.get(name, &method)) {
-            return self.runtimeError("Undefined property '{}'.", .{name.bytes});
+            return self.runtimeError("Undefined property '{s}'.", .{name.bytes});
         }
 
         const bound = try Obj.BoundMethod.create(self, self.peek(0), method.asObj().asClosure());
@@ -625,7 +625,7 @@ pub const VM = struct {
             const function = frame.closure.function;
             const line = function.chunk.lines.items[frame.ip - 1];
             const name = if (function.name) |str| str.bytes else "<script>";
-            try self.errWriter.print("[line {}] in {}\n", .{ line, name });
+            try self.errWriter.print("[line {}] in {s}\n", .{ line, name });
         }
 
         return error.RuntimeError;

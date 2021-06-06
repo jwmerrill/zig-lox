@@ -195,30 +195,30 @@ pub const UnionValue = union(enum) {
 // Shared between the two value representations
 fn printObject(obj: *Obj, out_stream: anytype) !void {
     switch (obj.objType) {
-        .String => try out_stream.print("{}", .{obj.asString().bytes}),
+        .String => try out_stream.print("{s}", .{obj.asString().bytes}),
         .Function => {
             const name = if (obj.asFunction().name) |str| str.bytes else "<script>";
-            try out_stream.print("<fn {}>", .{name});
+            try out_stream.print("<fn {s}>", .{name});
         },
         .NativeFunction => {
             try out_stream.print("<native fn>", .{});
         },
         .Closure => {
             const name = if (obj.asClosure().function.name) |str| str.bytes else "<script>";
-            try out_stream.print("<fn {}>", .{name});
+            try out_stream.print("<fn {s}>", .{name});
         },
         .Upvalue => {
             try out_stream.print("upvalue", .{});
         },
         .Class => {
-            try out_stream.print("{}", .{obj.asClass().name.bytes});
+            try out_stream.print("{s}", .{obj.asClass().name.bytes});
         },
         .Instance => {
-            try out_stream.print("{} instance", .{obj.asInstance().class.name.bytes});
+            try out_stream.print("{s} instance", .{obj.asInstance().class.name.bytes});
         },
         .BoundMethod => {
             const name = if (obj.asBoundMethod().method.function.name) |str| str.bytes else "<script>";
-            try out_stream.print("<fn {}>", .{name});
+            try out_stream.print("<fn {s}>", .{name});
         },
     }
 }

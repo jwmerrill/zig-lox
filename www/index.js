@@ -55,6 +55,8 @@ function main(wasm) {
       outputElt.scrollTop = outputElt.scrollHeight;
       inputElt.value = '';
 
+      if (value === '') return;
+
       // Intepret input, printing any outputs to the display
       interpretString(value);
     }
