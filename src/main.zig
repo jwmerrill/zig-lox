@@ -7,12 +7,13 @@ const VM = @import("./vm.zig").VM;
 const debug = @import("./debug.zig");
 
 pub fn main() !void {
+    var general_purpose_allocator = std.heap.GeneralPurposeAllocator(.{}){};
+
     const allocator = init: {
         if (comptime debug.TESTING_ALLOCATOR) {
             break :init std.testing.allocator;
         } else if (comptime std.Target.current.isWasm()) {
-            // TODO, this allocator is very inefficient
-            break :init std.heap.page_allocator;
+            break :init &general_purpose_allocator.allocator;
         } else {
             break :init std.heap.c_allocator;
         }

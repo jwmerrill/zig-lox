@@ -7,7 +7,8 @@ const Chunk = @import("./chunk.zig").Chunk;
 const VM = @import("./vm.zig").VM;
 const ExternalWriter = @import("./writer.zig").ExternalWriter;
 
-const allocator = std.heap.page_allocator;
+var general_purpose_allocator = std.heap.GeneralPurposeAllocator(.{}){};
+const allocator = &general_purpose_allocator.allocator;
 
 // These functions are expected to be passed in as part of the WASM environment
 extern fn writeOut(ptr: usize, len: usize) void;
