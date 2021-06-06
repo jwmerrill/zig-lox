@@ -35,7 +35,7 @@ wasi: directories
 .PHONY: wasm
 wasm: directories
 	cd build && \
-	zig build-lib ../src/wasm-lib.zig -target wasm32-freestanding -O ReleaseSmall
+	zig build-lib ../src/wasm-lib.zig -target wasm32-freestanding -dynamic -O ReleaseSmall
 
 .PHONY: www
 www: wasm
