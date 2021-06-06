@@ -228,11 +228,11 @@ pub const Parser = struct {
             },
             .Error => {},
             else => {
-                try self.vm.errWriter.print(" at '{}'", .{token.lexeme});
+                try self.vm.errWriter.print(" at '{s}'", .{token.lexeme});
             },
         }
 
-        try self.vm.errWriter.print(": {}\n", .{message});
+        try self.vm.errWriter.print(": {s}\n", .{message});
 
         self.hadError = true;
     }

@@ -27,7 +27,7 @@ pub fn main() !void {
 }
 
 fn run_test(lox_path: []const u8, test_path: []const u8) !bool {
-    std.debug.warn("{}\n", .{test_path});
+    std.debug.warn("{s}\n", .{test_path});
     const argv = [_][]const u8{ lox_path, test_path };
     const result = try std.ChildProcess.exec(.{ .allocator = allocator, .argv = argv[0..] });
     defer allocator.free(result.stdout);
@@ -53,21 +53,21 @@ fn validate_exit_code(actual: u32, expected: u32) bool {
 
 fn validate_output(actual: []const u8, expected: []const u8) bool {
     if (std.mem.eql(u8, actual, expected)) return true;
-    std.debug.warn("Output differs:\nActual:\n{}\n\nExpected:\n{}\n\n", .{ actual, expected });
+    std.debug.warn("Output differs:\nActual:\n{s}\n\nExpected:\n{s}\n\n", .{ actual, expected });
     return false;
 }
 
 fn validate_runtime_error(actual: []const u8, expected: []const u8) bool {
     if (expected.len == 0) return true;
     if (std.mem.indexOf(u8, actual, expected) != null) return true;
-    std.debug.warn("Missing expected runtime error:\nActual:\n{}\n\nExpected:\n{} ...\n\n", .{ actual, expected });
+    std.debug.warn("Missing expected runtime error:\nActual:\n{s}\n\nExpected:\n{s} ...\n\n", .{ actual, expected });
     return false;
 }
 
 fn validate_compile_error(actual: []const u8, expected: []const u8) bool {
     if (expected.len == 0) return true;
     if (std.mem.eql(u8, actual, expected)) return true;
-    std.debug.warn("Missing expected compile error:\nActual:\n{}\n\nExpected:\n{}\n\n", .{ actual, expected });
+    std.debug.warn("Missing expected compile error:\nActual:\n{s}\n\nExpected:\n{s}\n\n", .{ actual, expected });
     return false;
 }
 
