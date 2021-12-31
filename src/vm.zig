@@ -50,7 +50,7 @@ pub const VM = struct {
     initString: ?*Obj.String,
     globals: Table,
     parser: ?*Parser,
-    grayStack: ArrayList(*Obj),
+    nextGray: ?*Obj,
     outWriter: VMWriter,
     errWriter: VMWriter,
 
@@ -66,7 +66,7 @@ pub const VM = struct {
             .initString = null,
             .globals = undefined,
             .parser = null,
-            .grayStack = undefined,
+            .nextGray = null,
             .outWriter = undefined,
             .errWriter = undefined,
         };
@@ -77,10 +77,6 @@ pub const VM = struct {
     pub fn init(self: *VM, backingAllocator: Allocator, outWriter: VMWriter, errWriter: VMWriter) !void {
         self.gcAllocatorInstance = GCAllocator.init(self, backingAllocator);
         const allocator = self.gcAllocatorInstance.allocator();
-
-        // NOTE, purposely uses the backing allocator to avoid having
-        // growing the grayStack during GC kick off more GC.
-        self.grayStack = std.ArrayList(*Obj).init(backingAllocator);
 
         // NOTE, we can tell none of this allocates because none of
         // these operations can fail, and allocation can always fail
@@ -105,7 +101,6 @@ pub const VM = struct {
         self.globals.deinit();
         self.frames.deinit();
         self.stack.deinit();
-        self.grayStack.deinit();
     }
 
     pub fn freeObjects(self: *VM) void {

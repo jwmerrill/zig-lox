@@ -8,6 +8,7 @@ const Table = @import("./table.zig").Table;
 
 pub const Obj = struct {
     next: ?*Obj,
+    nextGray: ?*Obj,
     objType: Type,
     isMarked: bool,
 
@@ -18,6 +19,7 @@ pub const Obj = struct {
 
         ptr.obj = Obj{
             .next = vm.objects,
+            .nextGray = null,
             .objType = objType,
             .isMarked = false,
         };

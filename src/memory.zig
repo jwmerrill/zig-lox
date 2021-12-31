@@ -31,7 +31,7 @@ pub const GCAllocator = struct {
 
     fn alloc(self: *Self, len: usize, ptr_align: u29, len_align: u29, ret_addr: usize) error{OutOfMemory}![]u8 {
         if ((self.bytesAllocated + len > self.nextGC) or debug.STRESS_GC) {
-            try self.collectGarbage();
+            self.collectGarbage();
         }
 
         var out = try self.parent_allocator.rawAlloc(len, ptr_align, len_align, ret_addr);
@@ -44,9 +44,7 @@ pub const GCAllocator = struct {
     fn resize(self: *Self, buf: []u8, buf_align: u29, new_len: usize, len_align: u29, ret_addr: usize) ?usize {
         if (new_len > buf.len) {
             if ((self.bytesAllocated + (new_len - buf.len) > self.nextGC) or debug.STRESS_GC) {
-                self.collectGarbage() catch {
-                    return null;
-                };
+                self.collectGarbage();
             }
         }
 
@@ -72,13 +70,13 @@ pub const GCAllocator = struct {
         self.bytesAllocated -= buf.len;
     }
 
-    fn collectGarbage(self: *Self) !void {
+    fn collectGarbage(self: *Self) void {
         if (debug.LOG_GC) {
             std.debug.print("-- gc begin\n", .{});
         }
 
-        try self.markRoots();
-        try self.traceReferences();
+        self.markRoots();
+        self.traceReferences();
         self.removeUnreferencedStrings();
         self.sweep();
 
@@ -89,30 +87,31 @@ pub const GCAllocator = struct {
         }
     }
 
-    fn markRoots(self: *Self) !void {
+    fn markRoots(self: *Self) void {
         for (self.vm.stack.items) |value| {
-            try self.markValue(value);
+            self.markValue(value);
         }
 
         for (self.vm.frames.items) |frame| {
-            try self.markObject(&frame.closure.obj);
+            self.markObject(&frame.closure.obj);
         }
 
         var maybeUpvalue = self.vm.openUpvalues;
         while (maybeUpvalue) |upvalue| {
-            try self.markObject(&upvalue.obj);
+            self.markObject(&upvalue.obj);
             maybeUpvalue = upvalue.next;
         }
 
-        try self.markTable(&self.vm.globals);
-        try self.markCompilerRoots();
-        if (self.vm.initString) |initString| try self.markObject(&initString.obj);
+        self.markTable(&self.vm.globals);
+        self.markCompilerRoots();
+        if (self.vm.initString) |initString| self.markObject(&initString.obj);
     }
 
-    fn traceReferences(self: *Self) !void {
-        while (self.vm.grayStack.items.len > 0) {
-            const obj = self.vm.grayStack.pop();
-            try self.blackenObject(obj);
+    fn traceReferences(self: *Self) void {
+        while (self.vm.nextGray) |obj| {
+            self.vm.nextGray = obj.nextGray;
+            obj.nextGray = null;
+            self.blackenObject(obj);
         }
     }
 
@@ -148,55 +147,55 @@ pub const GCAllocator = struct {
         }
     }
 
-    fn blackenObject(self: *Self, obj: *Obj) !void {
+    fn blackenObject(self: *Self, obj: *Obj) void {
         if (debug.LOG_GC) {
             std.debug.print("{} blacken {}\n", .{ @ptrToInt(obj), obj.value() });
         }
 
         switch (obj.objType) {
-            .Upvalue => try self.markValue(obj.asUpvalue().closed),
+            .Upvalue => self.markValue(obj.asUpvalue().closed),
             .Function => {
                 const function = obj.asFunction();
-                if (function.name) |name| try self.markObject(&name.obj);
-                try self.markArray(function.chunk.constants.items);
+                if (function.name) |name| self.markObject(&name.obj);
+                self.markArray(function.chunk.constants.items);
             },
             .Closure => {
                 const closure = obj.asClosure();
-                try self.markObject(&closure.function.obj);
+                self.markObject(&closure.function.obj);
                 for (closure.upvalues) |maybeUpvalue| {
                     if (maybeUpvalue) |upvalue| {
-                        try self.markObject(&upvalue.obj);
+                        self.markObject(&upvalue.obj);
                     }
                 }
             },
             .Class => {
                 const class = obj.asClass();
-                try self.markObject(&class.name.obj);
-                try self.markTable(&class.methods);
+                self.markObject(&class.name.obj);
+                self.markTable(&class.methods);
             },
             .Instance => {
                 const instance = obj.asInstance();
-                try self.markObject(&instance.class.obj);
-                try self.markTable(&instance.fields);
+                self.markObject(&instance.class.obj);
+                self.markTable(&instance.fields);
             },
             .BoundMethod => {
                 const bound = obj.asBoundMethod();
-                try self.markValue(bound.receiver);
-                try self.markObject(&bound.method.obj);
+                self.markValue(bound.receiver);
+                self.markObject(&bound.method.obj);
             },
             .NativeFunction, .String => {},
         }
     }
 
-    fn markArray(self: *Self, values: []Value) !void {
-        for (values) |value| try self.markValue(value);
+    fn markArray(self: *Self, values: []Value) void {
+        for (values) |value| self.markValue(value);
     }
 
-    fn markValue(self: *Self, value: Value) !void {
-        if (value.isObj()) try self.markObject(value.asObj());
+    fn markValue(self: *Self, value: Value) void {
+        if (value.isObj()) self.markObject(value.asObj());
     }
 
-    fn markObject(self: *Self, obj: *Obj) !void {
+    fn markObject(self: *Self, obj: *Obj) void {
         if (obj.isMarked) return;
 
         if (debug.LOG_GC) {
@@ -205,22 +204,23 @@ pub const GCAllocator = struct {
 
         obj.isMarked = true;
 
-        try self.vm.grayStack.append(obj);
+        obj.nextGray = self.vm.nextGray;
+        self.vm.nextGray = obj;
     }
 
-    fn markTable(self: *Self, table: *Table) !void {
+    fn markTable(self: *Self, table: *Table) void {
         for (table.entries) |entry| {
-            if (entry.key) |key| try self.markObject(&key.obj);
-            try self.markValue(entry.value);
+            if (entry.key) |key| self.markObject(&key.obj);
+            self.markValue(entry.value);
         }
     }
 
-    fn markCompilerRoots(self: *Self) !void {
+    fn markCompilerRoots(self: *Self) void {
         if (self.vm.parser) |parser| {
             var maybeCompiler: ?*Compiler = parser.compiler;
 
             while (maybeCompiler) |compiler| {
-                try self.markObject(&compiler.function.obj);
+                self.markObject(&compiler.function.obj);
                 maybeCompiler = compiler.enclosing;
             }
         }
