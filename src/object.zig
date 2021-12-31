@@ -7,10 +7,10 @@ const debug = @import("./debug.zig");
 const Table = @import("./table.zig").Table;
 
 pub const Obj = struct {
-    next: ?*Obj,
-    nextGray: ?*Obj,
     objType: Type,
     isMarked: bool,
+    next: ?*Obj,
+    nextGray: ?*Obj,
 
     pub const Type = enum { String, Function, NativeFunction, Closure, Upvalue, Class, Instance, BoundMethod };
 
@@ -18,10 +18,10 @@ pub const Obj = struct {
         const ptr = try vm.allocator.create(T);
 
         ptr.obj = Obj{
-            .next = vm.objects,
-            .nextGray = null,
             .objType = objType,
             .isMarked = false,
+            .next = vm.objects,
+            .nextGray = null,
         };
 
         vm.objects = &ptr.obj;

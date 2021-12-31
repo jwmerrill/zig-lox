@@ -45,16 +45,16 @@ pub const VM = struct {
     frames: ArrayList(CallFrame), // NOTE, book uses a fixed size stack
     stack: FixedCapacityStack(Value),
     objects: ?*Obj,
-    openUpvalues: ?*Obj.Upvalue,
-    strings: Table,
-    initString: ?*Obj.String,
-    globals: Table,
-    parser: ?*Parser,
     // Note: book uses a dynamic array for the stack of gray objects (a
     // GC bookkeeping concept), but the need to grow this stack during
     // garbage collection means that GC can fail with OOM. Use an
     // intrusive linked list instead to make it so GC can't fail
     nextGray: ?*Obj,
+    openUpvalues: ?*Obj.Upvalue,
+    strings: Table,
+    initString: ?*Obj.String,
+    globals: Table,
+    parser: ?*Parser,
     outWriter: VMWriter,
     errWriter: VMWriter,
 
