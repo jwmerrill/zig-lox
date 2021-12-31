@@ -147,7 +147,7 @@ pub const Chunk = struct {
 
     fn constantInstruction(self: *Chunk, name: []const u8, offset: usize) usize {
         const constant = self.code.items[offset + 1];
-        std.debug.warn("{} {} {}\n", .{ name, constant, self.constants.items[constant]});
+        std.debug.warn("{} {} {}\n", .{ name, constant, self.constants.items[constant] });
         std.debug.warn("\n", .{});
         return offset + 2;
     }

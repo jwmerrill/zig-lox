@@ -38,8 +38,7 @@ fn run_test(lox_path: []const u8, test_path: []const u8) !bool {
     defer allocator.free(expected.runtime_error_message);
     defer allocator.free(expected.compile_error_message);
 
-    return (
-        validate_compile_error(result.stderr, expected.compile_error_message) and
+    return (validate_compile_error(result.stderr, expected.compile_error_message) and
         validate_runtime_error(result.stderr, expected.runtime_error_message) and
         validate_output(result.stdout, expected.output) and
         validate_exit_code(result.term.Exited, expected.exit_code));

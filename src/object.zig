@@ -11,9 +11,7 @@ pub const Obj = struct {
     objType: Type,
     isMarked: bool,
 
-    pub const Type = enum {
-        String, Function, NativeFunction, Closure, Upvalue, Class, Instance, BoundMethod
-    };
+    pub const Type = enum { String, Function, NativeFunction, Closure, Upvalue, Class, Instance, BoundMethod };
 
     pub fn allocate(vm: *VM, comptime T: type, objType: Type) !*Obj {
         const ptr = try vm.allocator.create(T);

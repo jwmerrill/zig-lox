@@ -34,9 +34,7 @@ pub fn compile(vm: *VM, source: []const u8) !*Obj.Function {
     return fun;
 }
 
-const FunctionType = enum {
-    Function, Initializer, Method, Script
-};
+const FunctionType = enum { Function, Initializer, Method, Script };
 
 const Upvalue = struct {
     index: u8,

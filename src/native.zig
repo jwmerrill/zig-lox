@@ -9,7 +9,7 @@ fn clockNative(args: []const Value) Value {
 extern fn now() f64;
 
 fn clockWasm(args: []const Value) Value {
-    return Value.fromNumber(now()/1000);
+    return Value.fromNumber(now() / 1000);
 }
 
 pub const clock = if (env.IS_WASM_FREESTANDING) clockWasm else clockNative;
