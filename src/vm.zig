@@ -50,6 +50,10 @@ pub const VM = struct {
     initString: ?*Obj.String,
     globals: Table,
     parser: ?*Parser,
+    // Note: book uses a dynamic array for the stack of gray objects (a
+    // GC bookkeeping concept), but the need to grow this stack during
+    // garbage collection means that GC can fail with OOM. Use an
+    // intrusive linked list instead to make it so GC can't fail
     nextGray: ?*Obj,
     outWriter: VMWriter,
     errWriter: VMWriter,
