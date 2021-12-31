@@ -4,7 +4,7 @@ A bytecode interpreter for the Lox language from [Crafting Interpreters](http://
 
 ## Dependencies
 
-Building zig-lox requires Zig 0.8. Zig binaries are available through several package managers, or from [zig's download page](https://ziglang.org/download).
+Building zig-lox requires Zig 0.9. Zig binaries are available through several package managers, or from [zig's download page](https://ziglang.org/download).
 
 ## Usage
 

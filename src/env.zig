@@ -1,3 +1,3 @@
-const std = @import("std");
+const builtin = @import("builtin");
 
-pub const IS_WASM_FREESTANDING = std.Target.current.isWasm() and std.Target.current.os.tag == .freestanding;
+pub const IS_WASM_FREESTANDING = builtin.target.isWasm() and builtin.target.os.tag == .freestanding;

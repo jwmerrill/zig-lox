@@ -78,6 +78,8 @@ pub const NanBoxedValue = packed struct {
     }
 
     pub fn format(self: NanBoxedValue, comptime fmt: []const u8, options: std.fmt.FormatOptions, out_stream: anytype) !void {
+        _ = fmt;
+        _ = options;
         if (self.isNumber()) {
             try out_stream.print("{d}", .{self.asNumber()});
         } else if (self.isBool()) {
@@ -161,7 +163,7 @@ pub const UnionValue = union(enum) {
                     else => false,
                 };
             },
-            .Nil => |a| {
+            .Nil => {
                 return switch (bBoxed) {
                     .Nil => true,
                     else => false,
@@ -183,6 +185,8 @@ pub const UnionValue = union(enum) {
     }
 
     pub fn format(self: UnionValue, comptime fmt: []const u8, options: std.fmt.FormatOptions, out_stream: anytype) !void {
+        _ = fmt;
+        _ = options;
         switch (self) {
             .Number => |value| try out_stream.print("{d}", .{value}),
             .Bool => |value| try out_stream.print("{}", .{value}),

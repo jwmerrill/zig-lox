@@ -17,11 +17,11 @@ const Entry = struct {
 };
 
 pub const Table = struct {
-    allocator: *Allocator,
+    allocator: Allocator,
     entries: []Entry,
     count: usize,
 
-    pub fn init(allocator: *Allocator) Table {
+    pub fn init(allocator: Allocator) Table {
         return Table{
             .allocator = allocator,
             .entries = &[_]Entry{},

@@ -11,9 +11,7 @@ pub const Obj = struct {
     objType: Type,
     isMarked: bool,
 
-    pub const Type = enum {
-        String, Function, NativeFunction, Closure, Upvalue, Class, Instance, BoundMethod
-    };
+    pub const Type = enum { String, Function, NativeFunction, Closure, Upvalue, Class, Instance, BoundMethod };
 
     pub fn allocate(vm: *VM, comptime T: type, objType: Type) !*Obj {
         const ptr = try vm.allocator.create(T);
@@ -27,7 +25,7 @@ pub const Obj = struct {
         vm.objects = &ptr.obj;
 
         if (debug.LOG_GC) {
-            std.debug.warn("{} allocate {} for {}\n", .{ @ptrToInt(&ptr.obj), @sizeOf(T), @typeName(T) });
+            std.debug.print("{} allocate {} for {}\n", .{ @ptrToInt(&ptr.obj), @sizeOf(T), @typeName(T) });
         }
 
         return &ptr.obj;
@@ -35,7 +33,7 @@ pub const Obj = struct {
 
     pub fn destroy(self: *Obj, vm: *VM) void {
         if (debug.LOG_GC) {
-            std.debug.warn("{} free {} {}\n", .{ @ptrToInt(self), self.objType, self.value() });
+            std.debug.print("{} free {} {}\n", .{ @ptrToInt(self), self.objType, self.value() });
         }
 
         switch (self.objType) {

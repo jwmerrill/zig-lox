@@ -9,63 +9,72 @@ const Table = @import("./table.zig").Table;
 
 pub const GCAllocator = struct {
     vm: *VM,
-    backing_allocator: *Allocator,
-    allocator: Allocator,
+    parent_allocator: Allocator,
     bytesAllocated: usize,
     nextGC: usize,
 
+    const Self = @This();
     const HEAP_GROW_FACTOR = 2;
 
-    pub fn init(vm: *VM, backing_allocator: *Allocator) GCAllocator {
-        return GCAllocator{
+    pub fn init(vm: *VM, parent_allocator: Allocator) GCAllocator {
+        return .{
             .vm = vm,
-            .allocator = Allocator{
-                .allocFn = alloc,
-                .resizeFn = resize,
-            },
-            .backing_allocator = backing_allocator,
+            .parent_allocator = parent_allocator,
             .bytesAllocated = 0,
             .nextGC = 1024 * 1024,
         };
     }
 
-    fn alloc(allocator: *Allocator, len: usize, ptr_align: u29, len_align: u29, ret_addr: usize) std.mem.Allocator.Error![]u8 {
-        const self = @fieldParentPtr(GCAllocator, "allocator", allocator);
+    pub fn allocator(self: *Self) Allocator {
+        return Allocator.init(self, alloc, resize, free);
+    }
 
+    fn alloc(self: *Self, len: usize, ptr_align: u29, len_align: u29, ret_addr: usize) error{OutOfMemory}![]u8 {
         if ((self.bytesAllocated + len > self.nextGC) or debug.STRESS_GC) {
             try self.collectGarbage();
         }
 
-        var out = try self.backing_allocator.allocFn(self.backing_allocator, len, ptr_align, len_align, ret_addr);
+        var out = try self.parent_allocator.rawAlloc(len, ptr_align, len_align, ret_addr);
 
         self.bytesAllocated += out.len;
 
         return out;
     }
 
-    fn resize(allocator: *Allocator, buf: []u8, buf_align: u29, new_len: usize, len_align: u29, ret_addr: usize) std.mem.Allocator.Error!usize {
-        const self = @fieldParentPtr(GCAllocator, "allocator", allocator);
-
+    fn resize(self: *Self, buf: []u8, buf_align: u29, new_len: usize, len_align: u29, ret_addr: usize) ?usize {
         if (new_len > buf.len) {
             if ((self.bytesAllocated + (new_len - buf.len) > self.nextGC) or debug.STRESS_GC) {
-                try self.collectGarbage();
+                self.collectGarbage() catch {
+                    return null;
+                };
             }
         }
 
-        const out = try self.backing_allocator.resizeFn(self.backing_allocator, buf, buf_align, new_len, len_align, ret_addr);
-
-        if (out > buf.len) {
-            self.bytesAllocated += out - buf.len;
+        if (self.parent_allocator.rawResize(buf, buf_align, new_len, len_align, ret_addr)) |resized_len| {
+            if (resized_len > buf.len) {
+                self.bytesAllocated += resized_len - buf.len;
+            } else {
+                self.bytesAllocated -= buf.len - resized_len;
+            }
+            return resized_len;
         } else {
-            self.bytesAllocated -= buf.len - out;
+            return null;
         }
-
-        return out;
     }
 
-    fn collectGarbage(self: *GCAllocator) !void {
+    fn free(
+        self: *Self,
+        buf: []u8,
+        buf_align: u29,
+        ret_addr: usize,
+    ) void {
+        self.parent_allocator.rawFree(buf, buf_align, ret_addr);
+        self.bytesAllocated -= buf.len;
+    }
+
+    fn collectGarbage(self: *Self) !void {
         if (debug.LOG_GC) {
-            std.debug.warn("-- gc begin\n", .{});
+            std.debug.print("-- gc begin\n", .{});
         }
 
         try self.markRoots();
@@ -76,11 +85,11 @@ pub const GCAllocator = struct {
         self.nextGC = self.bytesAllocated * HEAP_GROW_FACTOR;
 
         if (debug.LOG_GC) {
-            std.debug.warn("-- gc end\n", .{});
+            std.debug.print("-- gc end\n", .{});
         }
     }
 
-    fn markRoots(self: *GCAllocator) !void {
+    fn markRoots(self: *Self) !void {
         for (self.vm.stack.items) |value| {
             try self.markValue(value);
         }
@@ -100,14 +109,14 @@ pub const GCAllocator = struct {
         if (self.vm.initString) |initString| try self.markObject(&initString.obj);
     }
 
-    fn traceReferences(self: *GCAllocator) !void {
+    fn traceReferences(self: *Self) !void {
         while (self.vm.grayStack.items.len > 0) {
             const obj = self.vm.grayStack.pop();
             try self.blackenObject(obj);
         }
     }
 
-    fn removeUnreferencedStrings(self: *GCAllocator) void {
+    fn removeUnreferencedStrings(self: *Self) void {
         for (self.vm.strings.entries) |*entry| {
             if (entry.key) |key| {
                 if (!key.obj.isMarked) {
@@ -117,7 +126,7 @@ pub const GCAllocator = struct {
         }
     }
 
-    fn sweep(self: *GCAllocator) void {
+    fn sweep(self: *Self) void {
         var previous: ?*Obj = null;
         var maybeObject = self.vm.objects;
         while (maybeObject) |object| {
@@ -139,9 +148,9 @@ pub const GCAllocator = struct {
         }
     }
 
-    fn blackenObject(self: *GCAllocator, obj: *Obj) !void {
+    fn blackenObject(self: *Self, obj: *Obj) !void {
         if (debug.LOG_GC) {
-            std.debug.warn("{} blacken {}\n", .{ @ptrToInt(obj), obj.value() });
+            std.debug.print("{} blacken {}\n", .{ @ptrToInt(obj), obj.value() });
         }
 
         switch (obj.objType) {
@@ -179,19 +188,19 @@ pub const GCAllocator = struct {
         }
     }
 
-    fn markArray(self: *GCAllocator, values: []Value) !void {
+    fn markArray(self: *Self, values: []Value) !void {
         for (values) |value| try self.markValue(value);
     }
 
-    fn markValue(self: *GCAllocator, value: Value) !void {
+    fn markValue(self: *Self, value: Value) !void {
         if (value.isObj()) try self.markObject(value.asObj());
     }
 
-    fn markObject(self: *GCAllocator, obj: *Obj) !void {
+    fn markObject(self: *Self, obj: *Obj) !void {
         if (obj.isMarked) return;
 
         if (debug.LOG_GC) {
-            std.debug.warn("{} mark {}\n", .{ @ptrToInt(obj), obj.value() });
+            std.debug.print("{} mark {}\n", .{ @ptrToInt(obj), obj.value() });
         }
 
         obj.isMarked = true;
@@ -199,14 +208,14 @@ pub const GCAllocator = struct {
         try self.vm.grayStack.append(obj);
     }
 
-    fn markTable(self: *GCAllocator, table: *Table) !void {
+    fn markTable(self: *Self, table: *Table) !void {
         for (table.entries) |entry| {
             if (entry.key) |key| try self.markObject(&key.obj);
             try self.markValue(entry.value);
         }
     }
 
-    fn markCompilerRoots(self: *GCAllocator) !void {
+    fn markCompilerRoots(self: *Self) !void {
         if (self.vm.parser) |parser| {
             var maybeCompiler: ?*Compiler = parser.compiler;
 
