@@ -22,4 +22,4 @@ pub const ExternalWriter = struct {
     }
 };
 
-pub const VMWriter = comptime if (env.IS_WASM_FREESTANDING) ExternalWriter.Writer else File.Writer;
+pub const VMWriter = if (env.IS_WASM_FREESTANDING) ExternalWriter.Writer else File.Writer;

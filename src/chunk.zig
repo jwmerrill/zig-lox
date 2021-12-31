@@ -48,7 +48,7 @@ pub const Chunk = struct {
     constants: ArrayList(Value),
     lines: ArrayList(usize),
 
-    pub fn init(allocator: *Allocator) Chunk {
+    pub fn init(allocator: Allocator) Chunk {
         return Chunk{
             .code = ArrayList(u8).init(allocator),
             .constants = ArrayList(Value).init(allocator),
@@ -78,7 +78,7 @@ pub const Chunk = struct {
     }
 
     pub fn disassemble(self: *Chunk, name: []const u8) void {
-        std.debug.warn("== {} ==\n", .{name});
+        std.debug.print("== {} ==\n", .{name});
 
         var i: usize = 0;
         while (i < self.code.items.len) {
@@ -88,13 +88,13 @@ pub const Chunk = struct {
 
     pub fn disassembleInstruction(self: *Chunk, offset: usize) usize {
         // Print offset
-        std.debug.warn("{:0>4} ", .{offset});
+        std.debug.print("{:0>4} ", .{offset});
 
         // Print line
         if (offset > 0 and self.lines.items[offset] == self.lines.items[offset - 1]) {
-            std.debug.warn("   | ", .{});
+            std.debug.print("   | ", .{});
         } else {
-            std.debug.warn("{: >4} ", .{self.lines.items[offset]});
+            std.debug.print("{: >4} ", .{self.lines.items[offset]});
         }
 
         // Print instruction
@@ -141,21 +141,22 @@ pub const Chunk = struct {
     }
 
     fn simpleInstruction(self: *Chunk, name: []const u8, offset: usize) usize {
-        std.debug.warn("{}\n", .{name});
+        _ = self;
+        std.debug.print("{}\n", .{name});
         return offset + 1;
     }
 
     fn constantInstruction(self: *Chunk, name: []const u8, offset: usize) usize {
         const constant = self.code.items[offset + 1];
-        std.debug.warn("{} {} {}\n", .{ name, constant, self.constants.items[constant] });
-        std.debug.warn("\n", .{});
+        std.debug.print("{} {} {}\n", .{ name, constant, self.constants.items[constant] });
+        std.debug.print("\n", .{});
         return offset + 2;
     }
 
     fn byteInstruction(self: *Chunk, name: []const u8, offset: usize) usize {
         const slot: u8 = self.code.items[offset + 1];
         // TODO, book makes more effort on formatting here, see Chap 22.4
-        std.debug.warn("{} {}\n", .{ name, slot });
+        std.debug.print("{} {}\n", .{ name, slot });
         return offset + 2;
     }
 
@@ -163,7 +164,7 @@ pub const Chunk = struct {
         var jump = @intCast(u16, self.code.items[offset + 1]) << 8;
         jump |= self.code.items[offset + 2];
         const target = @intCast(isize, offset) + 3 + sign * @intCast(isize, jump);
-        std.debug.warn("{} {} -> {}\n", .{ name, offset, target });
+        std.debug.print("{} {} -> {}\n", .{ name, offset, target });
         return offset + 3;
     }
 
@@ -171,7 +172,7 @@ pub const Chunk = struct {
         var offset = initialOffset + 1;
         const constant = self.code.items[offset];
         offset += 1;
-        std.debug.warn("{} {} {}\n", .{ name, constant, self.constants.items[constant] });
+        std.debug.print("{} {} {}\n", .{ name, constant, self.constants.items[constant] });
 
         // Disassemble upvalues
         const function = self.constants.items[constant].asObj().asFunction();
@@ -182,7 +183,7 @@ pub const Chunk = struct {
             offset += 1;
             const index = self.code.items[offset];
             offset += 1;
-            std.debug.warn("{} | {} {}\n", .{ offset - 2, valueType, index });
+            std.debug.print("{} | {} {}\n", .{ offset - 2, valueType, index });
         }
 
         return offset;
@@ -191,7 +192,7 @@ pub const Chunk = struct {
     fn invokeInstruction(self: *Chunk, name: []const u8, offset: usize) usize {
         const constant = self.code.items[offset + 1];
         const argCount = self.code.items[offset + 2];
-        std.debug.warn("{} ({} args) {} '{}'\n'", .{ name, argCount, constant, self.constants.items[constant] });
+        std.debug.print("{} ({} args) {} '{}'\n'", .{ name, argCount, constant, self.constants.items[constant] });
         return offset + 3;
     }
 };

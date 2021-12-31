@@ -1,5 +1,4 @@
 const std = @import("std");
-const warn = std.debug.warn;
 const maxInt = std.math.maxInt;
 const Allocator = std.mem.Allocator;
 const Scanner = @import("./scanner.zig").Scanner;

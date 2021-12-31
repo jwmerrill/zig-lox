@@ -22,12 +22,12 @@ pub fn main() !void {
         }
     }
 
-    std.debug.warn("\nPassed: {}, Failed: {}\n", .{ npassed, nfailed });
+    std.debug.print("\nPassed: {}, Failed: {}\n", .{ npassed, nfailed });
     process.exit(if (nfailed > 0) 1 else 0);
 }
 
 fn run_test(lox_path: []const u8, test_path: []const u8) !bool {
-    std.debug.warn("{s}\n", .{test_path});
+    std.debug.print("{s}\n", .{test_path});
     const argv = [_][]const u8{ lox_path, test_path };
     const result = try std.ChildProcess.exec(.{ .allocator = allocator, .argv = argv[0..] });
     defer allocator.free(result.stdout);
@@ -46,27 +46,27 @@ fn run_test(lox_path: []const u8, test_path: []const u8) !bool {
 
 fn validate_exit_code(actual: u32, expected: u32) bool {
     if (actual == expected) return true;
-    std.debug.warn("Incorrect exit code\nActual: {}\nExpected: {}\n", .{ actual, expected });
+    std.debug.print("Incorrect exit code\nActual: {}\nExpected: {}\n", .{ actual, expected });
     return false;
 }
 
 fn validate_output(actual: []const u8, expected: []const u8) bool {
     if (std.mem.eql(u8, actual, expected)) return true;
-    std.debug.warn("Output differs:\nActual:\n{s}\n\nExpected:\n{s}\n\n", .{ actual, expected });
+    std.debug.print("Output differs:\nActual:\n{s}\n\nExpected:\n{s}\n\n", .{ actual, expected });
     return false;
 }
 
 fn validate_runtime_error(actual: []const u8, expected: []const u8) bool {
     if (expected.len == 0) return true;
     if (std.mem.indexOf(u8, actual, expected) != null) return true;
-    std.debug.warn("Missing expected runtime error:\nActual:\n{s}\n\nExpected:\n{s} ...\n\n", .{ actual, expected });
+    std.debug.print("Missing expected runtime error:\nActual:\n{s}\n\nExpected:\n{s} ...\n\n", .{ actual, expected });
     return false;
 }
 
 fn validate_compile_error(actual: []const u8, expected: []const u8) bool {
     if (expected.len == 0) return true;
     if (std.mem.eql(u8, actual, expected)) return true;
-    std.debug.warn("Missing expected compile error:\nActual:\n{s}\n\nExpected:\n{s}\n\n", .{ actual, expected });
+    std.debug.print("Missing expected compile error:\nActual:\n{s}\n\nExpected:\n{s}\n\n", .{ actual, expected });
     return false;
 }
 

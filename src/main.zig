@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const io = std.io;
 const process = std.process;
 const Allocator = std.mem.Allocator;
@@ -12,14 +13,14 @@ pub fn main() !void {
     const allocator = init: {
         if (comptime debug.TESTING_ALLOCATOR) {
             break :init std.testing.allocator;
-        } else if (comptime std.Target.current.isWasm()) {
-            break :init &general_purpose_allocator.allocator;
+        } else if (comptime builtin.target.isWasm()) {
+            break :init general_purpose_allocator.allocator();
         } else {
             break :init std.heap.c_allocator;
         }
     };
 
-    if (comptime std.Target.current.isWasm()) {
+    if (comptime builtin.target.isWasm()) {
         try repl(allocator);
     } else {
         const args = try process.argsAlloc(allocator);
@@ -29,14 +30,15 @@ pub fn main() !void {
             1 => try repl(allocator),
             2 => try runFile(allocator, args[1]),
             else => {
-                std.debug.warn("Usage: lox [path]\n", .{});
+                const stderr = io.getStdErr().writer();
+                try stderr.print("Usage: lox [path]\n", .{});
                 process.exit(64);
             },
         }
     }
 }
 
-fn repl(allocator: *Allocator) !void {
+fn repl(allocator: Allocator) !void {
     const stderr = io.getStdErr().writer();
     const stdin = io.getStdIn();
 
@@ -60,7 +62,7 @@ fn repl(allocator: *Allocator) !void {
     }
 }
 
-fn runFile(allocator: *Allocator, path: []const u8) !void {
+fn runFile(allocator: Allocator, path: []const u8) !void {
     var vm = VM.create();
     try vm.init(allocator, std.io.getStdOut().writer(), std.io.getStdErr().writer());
     defer vm.deinit();

@@ -41,7 +41,7 @@ const STACK_MAX = FRAMES_MAX * (std.math.maxInt(u8) + 1);
 
 pub const VM = struct {
     gcAllocatorInstance: GCAllocator,
-    allocator: *Allocator,
+    allocator: Allocator,
     frames: ArrayList(CallFrame), // NOTE, book uses a fixed size stack
     stack: FixedCapacityStack(Value),
     objects: ?*Obj,
@@ -74,9 +74,9 @@ pub const VM = struct {
         return vm;
     }
 
-    pub fn init(self: *VM, backingAllocator: *Allocator, outWriter: VMWriter, errWriter: VMWriter) !void {
+    pub fn init(self: *VM, backingAllocator: Allocator, outWriter: VMWriter, errWriter: VMWriter) !void {
         self.gcAllocatorInstance = GCAllocator.init(self, backingAllocator);
-        const allocator = &self.gcAllocatorInstance.allocator;
+        const allocator = self.gcAllocatorInstance.allocator();
 
         // NOTE, purposely uses the backing allocator to avoid having
         // growing the grayStack during GC kick off more GC.
@@ -607,11 +607,11 @@ pub const VM = struct {
     }
 
     fn printStack(self: *VM) !void {
-        std.debug.warn("          ", .{});
+        std.debug.print("          ", .{});
         for (self.stack.items) |value| {
-            std.debug.warn("[ {} ]", .{value});
+            std.debug.print("[ {} ]", .{value});
         }
-        std.debug.warn("\n", .{});
+        std.debug.print("\n", .{});
     }
 
     fn runtimeError(self: *VM, comptime message: []const u8, args: anytype) !void {
