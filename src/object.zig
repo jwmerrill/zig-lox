@@ -205,7 +205,7 @@ pub const Obj = struct {
         obj: Obj,
         function: NativeFunctionType,
 
-        pub const NativeFunctionType = fn (args: []Value) Value;
+        pub const NativeFunctionType = *const fn (args: []Value) Value;
 
         pub fn create(vm: *VM, function: NativeFunctionType) !*NativeFunction {
             const obj = try Obj.allocate(vm, NativeFunction, .NativeFunction);
