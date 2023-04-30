@@ -3,9 +3,11 @@ const File = std.fs.File;
 const env = @import("./env.zig");
 
 pub const ExternalWriter = struct {
-    writeFn: fn (bytes: []const u8) void,
+    pub const WriteFnType = *const fn (bytes: []const u8) void;
 
-    pub fn init(writeFn: fn (bytes: []const u8) void) ExternalWriter {
+    writeFn: WriteFnType,
+
+    pub fn init(writeFn: WriteFnType) ExternalWriter {
         return ExternalWriter{ .writeFn = writeFn };
     }
 
