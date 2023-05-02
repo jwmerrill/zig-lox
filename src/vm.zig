@@ -139,18 +139,7 @@ pub const VM = struct {
     }
 
     fn run(self: *VM) !void {
-        while (true) {
-            if (debug.TRACE_EXECUTION) {
-                // Print debugging information
-                try self.printStack();
-                _ = self.currentChunk().disassembleInstruction(self.currentFrame().ip);
-            }
-
-            const instruction = self.readByte();
-            const opCode = @intToEnum(OpCode, instruction);
-            try self.runOp(opCode);
-            if (opCode == .Return and self.frames.items.len == 0) break;
-        }
+        try self.dispatch();
     }
 
     fn readString(self: *VM) *Obj.String {
@@ -159,236 +148,372 @@ pub const VM = struct {
         return nameValue.asObj().asString();
     }
 
-    fn runOp(self: *VM, opCode: OpCode) !void {
-        switch (opCode) {
-            .Return => {
-                const result = self.pop();
-                const frame = self.frames.pop();
+    const RuntimeErrors = error{ OutOfMemory, RuntimeError } || std.os.WriteError;
 
-                self.closeUpvalues(&self.stack.items[frame.start]);
-
-                if (self.frames.items.len == 0) return;
-
-                try self.stack.resize(frame.start);
-                self.push(result);
-            },
-            .Pop => {
-                _ = self.pop();
-            },
-            .GetLocal => {
-                const slot = self.readByte();
-                self.push(self.stack.items[self.currentFrame().start + slot]);
-            },
-            .SetLocal => {
-                const slot = self.readByte();
-                self.stack.items[self.currentFrame().start + slot] = self.peek(0);
-            },
-            .GetGlobal => {
-                const name = self.readString();
-                var value: Value = undefined;
-                if (!self.globals.get(name, &value)) {
-                    return self.runtimeError("Undefined variable '{s}'.", .{name.bytes});
-                }
-                self.push(value);
-            },
-            .DefineGlobal => {
-                _ = try self.globals.set(self.readString(), self.peek(0));
-                // NOTE don’t pop until value is in the hash table so
-                // that we don't lose the value if the GC runs during
-                // the set operation
-                _ = self.pop();
-            },
-            .SetGlobal => {
-                const name = self.readString();
-                if (try self.globals.set(name, self.peek(0))) {
-                    _ = self.globals.delete(name);
-                    return self.runtimeError("Undefined variable '{s}'.", .{name.bytes});
-                }
-            },
-            .GetUpvalue => {
-                const slot = self.readByte();
-                // Upvalues are guaranteed to be filled in by the time we get here
-                self.push(self.currentFrame().closure.upvalues[slot].?.location.*);
-            },
-            .SetUpvalue => {
-                const slot = self.readByte();
-                // Upvalues are guaranteed to be filled in by the time we get here
-                self.currentFrame().closure.upvalues[slot].?.location.* = self.peek(0);
-            },
-            .GetProperty => {
-                const maybeObj = self.peek(0);
-                if (!maybeObj.isObj()) return self.runtimeError("Only instances have properties.", .{});
-                const obj = maybeObj.asObj();
-                switch (obj.objType) {
-                    .String, .Function, .NativeFunction, .Closure, .Upvalue, .Class, .BoundMethod => {
-                        return self.runtimeError("Only instances have properties.", .{});
-                    },
-                    .Instance => {
-                        const instance = obj.asInstance();
-                        const name = self.readString();
-
-                        var value: Value = undefined;
-                        if (instance.fields.get(name, &value)) {
-                            _ = self.pop(); // Instance.
-                            self.push(value);
-                        } else {
-                            try self.bindMethod(instance.class, name);
-                        }
-                    },
-                }
-            },
-            .SetProperty => {
-                const maybeObj = self.peek(1);
-                if (!maybeObj.isObj()) return self.runtimeError("Only instances have fields.", .{});
-                const obj = maybeObj.asObj();
-                switch (obj.objType) {
-                    .String, .Function, .NativeFunction, .Closure, .Upvalue, .Class, .BoundMethod => {
-                        return self.runtimeError("Only instances have fields.", .{});
-                    },
-                    .Instance => {
-                        const instance = obj.asInstance();
-                        _ = try instance.fields.set(self.readString(), self.peek(0));
-
-                        const value = self.pop();
-                        _ = self.pop();
-                        self.push(value);
-                    },
-                }
-            },
-            .GetSuper => {
-                const name = self.readString();
-                const superclass = self.pop().asObj().asClass();
-                try self.bindMethod(superclass, name);
-            },
-            .CloseUpvalue => {
-                self.closeUpvalues(&self.stack.items[self.stack.items.len - 2]);
-                _ = self.pop();
-            },
-            .Class => {
-                self.push((try Obj.Class.create(self, self.readString())).obj.value());
-            },
-            .Inherit => {
-                const maybeObj = self.peek(1);
-                if (!maybeObj.isObj()) return self.runtimeError("Superclass must be a class.", .{});
-                const obj = maybeObj.asObj();
-                if (!obj.isClass()) {
-                    return self.runtimeError("Superclass must be a class.", .{});
-                }
-                const superclass = obj.asClass();
-                const subclass = self.peek(0).asObj().asClass();
-
-                for (superclass.methods.entries) |entry| {
-                    if (entry.key) |key| _ = try subclass.methods.set(key, entry.value);
-                }
-
-                _ = self.pop(); // Subclass
-            },
-            .Method => {
-                try self.defineMethod(self.readString());
-            },
-            .Print => {
-                try self.outWriter.print("{}\n", .{self.pop()});
-            },
-            .Jump => {
-                const offset = self.readShort();
-                self.currentFrame().ip += offset;
-            },
-            .JumpIfFalse => {
-                const offset = self.readShort();
-                if (self.peek(0).isFalsey()) self.currentFrame().ip += offset;
-            },
-            .Loop => {
-                const offset = self.readShort();
-                self.currentFrame().ip -= offset;
-            },
-            .Call => {
-                const argCount = self.readByte();
-                try self.callValue(self.peek(argCount), argCount);
-            },
-            .Invoke => {
-                const method = self.readString();
-                const argCount = self.readByte();
-                try self.invoke(method, argCount);
-            },
-            .SuperInvoke => {
-                const method = self.readString();
-                const argCount = self.readByte();
-                const superclass = self.pop().asObj().asClass();
-                try self.invokeFromClass(superclass, method, argCount);
-            },
-            .Closure => {
-                const constant = self.readByte();
-                const value = self.currentChunk().constants.items[constant];
-                const function = value.asObj().asFunction();
-                const closure = try Obj.Closure.create(self, function);
-                self.push(closure.obj.value());
-                for (closure.upvalues) |*upvalue| {
-                    const isLocal = self.readByte() != 0;
-                    const index = self.readByte();
-                    if (isLocal) {
-                        // WARNING if the stack is ever resized, this
-                        // pointer into it becomes invalid. We can avoid
-                        // this using ensureCapacity when we create the
-                        // stack, and by making it an error to grow the
-                        // stack past that. Upvalues needing to be able
-                        // to point to either the stack or the heap
-                        // keeps us from growing the stack.
-                        upvalue.* = try self.captureUpvalue(&self.stack.items[self.currentFrame().start + index]);
-                    } else {
-                        upvalue.* = self.currentFrame().closure.upvalues[index];
-                    }
-                }
-            },
-            .Constant => {
-                const constant = self.readByte();
-                const value = self.currentChunk().constants.items[constant];
-                self.push(value);
-            },
-            .Nil => self.push(Value.nil()),
-            .True => self.push(Value.fromBool(true)),
-            .False => self.push(Value.fromBool(false)),
-            .Equal => {
-                const b = self.pop();
-                const a = self.pop();
-                self.push(Value.fromBool(a.equals(b)));
-            },
-            .Greater => {
-                const rhs = self.pop();
-                const lhs = self.pop();
-                if (!lhs.isNumber() or !rhs.isNumber()) {
-                    return self.runtimeError("Operands must be numbers.", .{});
-                }
-                self.push(Value.fromBool(lhs.asNumber() > rhs.asNumber()));
-            },
-            .Less => {
-                const rhs = self.pop();
-                const lhs = self.pop();
-                if (!lhs.isNumber() or !rhs.isNumber()) {
-                    return self.runtimeError("Operands must be numbers.", .{});
-                }
-                self.push(Value.fromBool(lhs.asNumber() < rhs.asNumber()));
-            },
-            .Negate => {
-                const value = self.pop();
-                if (!value.isNumber()) return self.runtimeError("Operand must be a number.", .{});
-                self.push(Value.fromNumber(-value.asNumber()));
-            },
-            .Add => {
-                const rhs = self.pop();
-                const lhs = self.pop();
-                if (lhs.isObj() and rhs.isObj()) {
-                    try self.concatenate(lhs.asObj(), rhs.asObj());
-                } else if (lhs.isNumber() and rhs.isNumber()) {
-                    self.push(Value.fromNumber(lhs.asNumber() + rhs.asNumber()));
-                } else {
-                    return self.runtimeError("Operands must be two numbers or two strings.", .{});
-                }
-            },
-            .Subtract => try self.binaryNumericOp(sub),
-            .Multiply => try self.binaryNumericOp(mul),
-            .Divide => try self.binaryNumericOp(div),
-            .Not => self.push(Value.fromBool(self.pop().isFalsey())),
+    fn dispatch(self: *VM) RuntimeErrors!void {
+        if (debug.TRACE_EXECUTION) {
+            // Print debugging information
+            try self.printStack();
+            _ = self.currentChunk().disassembleInstruction(self.currentFrame().ip);
         }
+
+        const instruction = self.readByte();
+        const opCode = @intToEnum(OpCode, instruction);
+
+        switch (opCode) {
+            .Return => try @call(.{ .modifier = .always_tail }, runReturn, .{self}),
+            .Pop => try @call(.{ .modifier = .always_tail }, runPop, .{self}),
+            .GetLocal => try @call(.{ .modifier = .always_tail }, runGetLocal, .{self}),
+            .SetLocal => try @call(.{ .modifier = .always_tail }, runSetLocal, .{self}),
+            .GetGlobal => try @call(.{ .modifier = .always_tail }, runGetGlobal, .{self}),
+            .DefineGlobal => try @call(.{ .modifier = .always_tail }, runDefineGlobal, .{self}),
+            .SetGlobal => try @call(.{ .modifier = .always_tail }, runSetGlobal, .{self}),
+            .GetUpvalue => try @call(.{ .modifier = .always_tail }, runGetUpvalue, .{self}),
+            .SetUpvalue => try @call(.{ .modifier = .always_tail }, runSetUpvalue, .{self}),
+            .GetProperty => try @call(.{ .modifier = .always_tail }, runGetProperty, .{self}),
+            .SetProperty => try @call(.{ .modifier = .always_tail }, runSetProperty, .{self}),
+            .GetSuper => try @call(.{ .modifier = .always_tail }, runGetSuper, .{self}),
+            .CloseUpvalue => try @call(.{ .modifier = .always_tail }, runCloseUpvalue, .{self}),
+            .Class => try @call(.{ .modifier = .always_tail }, runClass, .{self}),
+            .Inherit => try @call(.{ .modifier = .always_tail }, runInherit, .{self}),
+            .Method => try @call(.{ .modifier = .always_tail }, runMethod, .{self}),
+            .Print => try @call(.{ .modifier = .always_tail }, runPrint, .{self}),
+            .Jump => try @call(.{ .modifier = .always_tail }, runJump, .{self}),
+            .JumpIfFalse => try @call(.{ .modifier = .always_tail }, runJumpIfFalse, .{self}),
+            .Loop => try @call(.{ .modifier = .always_tail }, runLoop, .{self}),
+            .Call => try @call(.{ .modifier = .always_tail }, runCall, .{self}),
+            .Invoke => try @call(.{ .modifier = .always_tail }, runInvoke, .{self}),
+            .SuperInvoke => try @call(.{ .modifier = .always_tail }, runSuperInvoke, .{self}),
+            .Closure => try @call(.{ .modifier = .always_tail }, runClosure, .{self}),
+            .Constant => try @call(.{ .modifier = .always_tail }, runConstant, .{self}),
+            .Nil => try @call(.{ .modifier = .always_tail }, runNil, .{self}),
+            .True => try @call(.{ .modifier = .always_tail }, runTrue, .{self}),
+            .False => try @call(.{ .modifier = .always_tail }, runFalse, .{self}),
+            .Equal => try @call(.{ .modifier = .always_tail }, runEqual, .{self}),
+            .Greater => try @call(.{ .modifier = .always_tail }, runGreater, .{self}),
+            .Less => try @call(.{ .modifier = .always_tail }, runLess, .{self}),
+            .Negate => try @call(.{ .modifier = .always_tail }, runNegate, .{self}),
+            .Add => try @call(.{ .modifier = .always_tail }, runAdd, .{self}),
+            .Subtract => try @call(.{ .modifier = .always_tail }, runSubtract, .{self}),
+            .Multiply => try @call(.{ .modifier = .always_tail }, runMultiply, .{self}),
+            .Divide => try @call(.{ .modifier = .always_tail }, runDivide, .{self}),
+            .Not => try @call(.{ .modifier = .always_tail }, runNot, .{self}),
+        }
+    }
+
+    fn runReturn(self: *VM) RuntimeErrors!void {
+        const result = self.pop();
+        const frame = self.frames.pop();
+
+        self.closeUpvalues(&self.stack.items[frame.start]);
+
+        if (self.frames.items.len == 0) return;
+
+        try self.stack.resize(frame.start);
+        self.push(result);
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runPop(self: *VM) RuntimeErrors!void {
+        _ = self.pop();
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runGetLocal(self: *VM) RuntimeErrors!void {
+        const slot = self.readByte();
+        self.push(self.stack.items[self.currentFrame().start + slot]);
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runSetLocal(self: *VM) RuntimeErrors!void {
+        const slot = self.readByte();
+        self.stack.items[self.currentFrame().start + slot] = self.peek(0);
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runGetGlobal(self: *VM) RuntimeErrors!void {
+        const name = self.readString();
+        var value: Value = undefined;
+        if (!self.globals.get(name, &value)) {
+            return self.runtimeError("Undefined variable '{s}'.", .{name.bytes});
+        }
+        self.push(value);
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runDefineGlobal(self: *VM) RuntimeErrors!void {
+        _ = try self.globals.set(self.readString(), self.peek(0));
+        // NOTE don’t pop until value is in the hash table so
+        // that we don't lose the value if the GC runs during
+        // the set operation
+        _ = self.pop();
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runSetGlobal(self: *VM) RuntimeErrors!void {
+        const name = self.readString();
+        if (try self.globals.set(name, self.peek(0))) {
+            _ = self.globals.delete(name);
+            return self.runtimeError("Undefined variable '{s}'.", .{name.bytes});
+        }
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runGetUpvalue(self: *VM) RuntimeErrors!void {
+        const slot = self.readByte();
+        // Upvalues are guaranteed to be filled in by the time we get here
+        self.push(self.currentFrame().closure.upvalues[slot].?.location.*);
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runSetUpvalue(self: *VM) RuntimeErrors!void {
+        const slot = self.readByte();
+        // Upvalues are guaranteed to be filled in by the time we get here
+        self.currentFrame().closure.upvalues[slot].?.location.* = self.peek(0);
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runGetProperty(self: *VM) RuntimeErrors!void {
+        const maybeObj = self.peek(0);
+        if (!maybeObj.isObj()) return self.runtimeError("Only instances have properties.", .{});
+        const obj = maybeObj.asObj();
+        switch (obj.objType) {
+            .String, .Function, .NativeFunction, .Closure, .Upvalue, .Class, .BoundMethod => {
+                return self.runtimeError("Only instances have properties.", .{});
+            },
+            .Instance => {
+                const instance = obj.asInstance();
+                const name = self.readString();
+
+                var value: Value = undefined;
+                if (instance.fields.get(name, &value)) {
+                    _ = self.pop(); // Instance.
+                    self.push(value);
+                } else {
+                    try self.bindMethod(instance.class, name);
+                }
+            },
+        }
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runSetProperty(self: *VM) RuntimeErrors!void {
+        const maybeObj = self.peek(1);
+        if (!maybeObj.isObj()) return self.runtimeError("Only instances have fields.", .{});
+        const obj = maybeObj.asObj();
+        switch (obj.objType) {
+            .String, .Function, .NativeFunction, .Closure, .Upvalue, .Class, .BoundMethod => {
+                return self.runtimeError("Only instances have fields.", .{});
+            },
+            .Instance => {
+                const instance = obj.asInstance();
+                _ = try instance.fields.set(self.readString(), self.peek(0));
+
+                const value = self.pop();
+                _ = self.pop();
+                self.push(value);
+            },
+        }
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runGetSuper(self: *VM) RuntimeErrors!void {
+        const name = self.readString();
+        const superclass = self.pop().asObj().asClass();
+        try self.bindMethod(superclass, name);
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runCloseUpvalue(self: *VM) RuntimeErrors!void {
+        self.closeUpvalues(&self.stack.items[self.stack.items.len - 2]);
+        _ = self.pop();
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runClass(self: *VM) RuntimeErrors!void {
+        self.push((try Obj.Class.create(self, self.readString())).obj.value());
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runInherit(self: *VM) RuntimeErrors!void {
+        const maybeObj = self.peek(1);
+        if (!maybeObj.isObj()) return self.runtimeError("Superclass must be a class.", .{});
+        const obj = maybeObj.asObj();
+        if (!obj.isClass()) {
+            return self.runtimeError("Superclass must be a class.", .{});
+        }
+        const superclass = obj.asClass();
+        const subclass = self.peek(0).asObj().asClass();
+
+        for (superclass.methods.entries) |entry| {
+            if (entry.key) |key| _ = try subclass.methods.set(key, entry.value);
+        }
+
+        _ = self.pop(); // Subclass
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runMethod(self: *VM) RuntimeErrors!void {
+        try self.defineMethod(self.readString());
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runPrint(self: *VM) RuntimeErrors!void {
+        try self.outWriter.print("{}\n", .{self.pop()});
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runJump(self: *VM) RuntimeErrors!void {
+        const offset = self.readShort();
+        self.currentFrame().ip += offset;
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runJumpIfFalse(self: *VM) RuntimeErrors!void {
+        const offset = self.readShort();
+        if (self.peek(0).isFalsey()) self.currentFrame().ip += offset;
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runLoop(self: *VM) RuntimeErrors!void {
+        const offset = self.readShort();
+        self.currentFrame().ip -= offset;
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runCall(self: *VM) RuntimeErrors!void {
+        const argCount = self.readByte();
+        try self.callValue(self.peek(argCount), argCount);
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runInvoke(self: *VM) RuntimeErrors!void {
+        const method = self.readString();
+        const argCount = self.readByte();
+        try self.invoke(method, argCount);
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runSuperInvoke(self: *VM) RuntimeErrors!void {
+        const method = self.readString();
+        const argCount = self.readByte();
+        const superclass = self.pop().asObj().asClass();
+        try self.invokeFromClass(superclass, method, argCount);
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runClosure(self: *VM) RuntimeErrors!void {
+        const constant = self.readByte();
+        const value = self.currentChunk().constants.items[constant];
+        const function = value.asObj().asFunction();
+        const closure = try Obj.Closure.create(self, function);
+        self.push(closure.obj.value());
+        for (closure.upvalues) |*upvalue| {
+            const isLocal = self.readByte() != 0;
+            const index = self.readByte();
+            if (isLocal) {
+                // WARNING if the stack is ever resized, this
+                // pointer into it becomes invalid. We can avoid
+                // this using ensureCapacity when we create the
+                // stack, and by making it an error to grow the
+                // stack past that. Upvalues needing to be able
+                // to point to either the stack or the heap
+                // keeps us from growing the stack.
+                upvalue.* = try self.captureUpvalue(&self.stack.items[self.currentFrame().start + index]);
+            } else {
+                upvalue.* = self.currentFrame().closure.upvalues[index];
+            }
+        }
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runConstant(self: *VM) RuntimeErrors!void {
+        const constant = self.readByte();
+        const value = self.currentChunk().constants.items[constant];
+        self.push(value);
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runNil(self: *VM) RuntimeErrors!void {
+        self.push(Value.nil());
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runTrue(self: *VM) RuntimeErrors!void {
+        self.push(Value.fromBool(true));
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runFalse(self: *VM) RuntimeErrors!void {
+        self.push(Value.fromBool(false));
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runEqual(self: *VM) RuntimeErrors!void {
+        const b = self.pop();
+        const a = self.pop();
+        self.push(Value.fromBool(a.equals(b)));
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runGreater(self: *VM) RuntimeErrors!void {
+        const rhs = self.pop();
+        const lhs = self.pop();
+        if (!lhs.isNumber() or !rhs.isNumber()) {
+            return self.runtimeError("Operands must be numbers.", .{});
+        }
+        self.push(Value.fromBool(lhs.asNumber() > rhs.asNumber()));
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runLess(self: *VM) RuntimeErrors!void {
+        const rhs = self.pop();
+        const lhs = self.pop();
+        if (!lhs.isNumber() or !rhs.isNumber()) {
+            return self.runtimeError("Operands must be numbers.", .{});
+        }
+        self.push(Value.fromBool(lhs.asNumber() < rhs.asNumber()));
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runNegate(self: *VM) RuntimeErrors!void {
+        const value = self.pop();
+        if (!value.isNumber()) return self.runtimeError("Operand must be a number.", .{});
+        self.push(Value.fromNumber(-value.asNumber()));
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runAdd(self: *VM) RuntimeErrors!void {
+        const rhs = self.pop();
+        const lhs = self.pop();
+        if (lhs.isObj() and rhs.isObj()) {
+            try self.concatenate(lhs.asObj(), rhs.asObj());
+        } else if (lhs.isNumber() and rhs.isNumber()) {
+            self.push(Value.fromNumber(lhs.asNumber() + rhs.asNumber()));
+        } else {
+            return self.runtimeError("Operands must be two numbers or two strings.", .{});
+        }
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runSubtract(self: *VM) RuntimeErrors!void {
+        try self.binaryNumericOp(sub);
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runMultiply(self: *VM) RuntimeErrors!void {
+        try self.binaryNumericOp(mul);
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runDivide(self: *VM) RuntimeErrors!void {
+        try self.binaryNumericOp(div);
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+    }
+
+    fn runNot(self: *VM) RuntimeErrors!void {
+        self.push(Value.fromBool(self.pop().isFalsey()));
+        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
     }
 
     fn binaryNumericOp(self: *VM, comptime op: anytype) !void {
