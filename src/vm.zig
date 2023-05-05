@@ -150,6 +150,8 @@ pub const VM = struct {
 
     const RuntimeErrors = error{ OutOfMemory, RuntimeError } || std.os.WriteError;
 
+    const InstructionCallModifier = .{ .modifier = .always_tail };
+
     fn dispatch(self: *VM) RuntimeErrors!void {
         if (debug.TRACE_EXECUTION) {
             // Print debugging information
@@ -161,45 +163,47 @@ pub const VM = struct {
         const opCode = @intToEnum(OpCode, instruction);
 
         switch (opCode) {
-            .Return => try @call(.{ .modifier = .always_tail }, runReturn, .{self}),
-            .Pop => try @call(.{ .modifier = .always_tail }, runPop, .{self}),
-            .GetLocal => try @call(.{ .modifier = .always_tail }, runGetLocal, .{self}),
-            .SetLocal => try @call(.{ .modifier = .always_tail }, runSetLocal, .{self}),
-            .GetGlobal => try @call(.{ .modifier = .always_tail }, runGetGlobal, .{self}),
-            .DefineGlobal => try @call(.{ .modifier = .always_tail }, runDefineGlobal, .{self}),
-            .SetGlobal => try @call(.{ .modifier = .always_tail }, runSetGlobal, .{self}),
-            .GetUpvalue => try @call(.{ .modifier = .always_tail }, runGetUpvalue, .{self}),
-            .SetUpvalue => try @call(.{ .modifier = .always_tail }, runSetUpvalue, .{self}),
-            .GetProperty => try @call(.{ .modifier = .always_tail }, runGetProperty, .{self}),
-            .SetProperty => try @call(.{ .modifier = .always_tail }, runSetProperty, .{self}),
-            .GetSuper => try @call(.{ .modifier = .always_tail }, runGetSuper, .{self}),
-            .CloseUpvalue => try @call(.{ .modifier = .always_tail }, runCloseUpvalue, .{self}),
-            .Class => try @call(.{ .modifier = .always_tail }, runClass, .{self}),
-            .Inherit => try @call(.{ .modifier = .always_tail }, runInherit, .{self}),
-            .Method => try @call(.{ .modifier = .always_tail }, runMethod, .{self}),
-            .Print => try @call(.{ .modifier = .always_tail }, runPrint, .{self}),
-            .Jump => try @call(.{ .modifier = .always_tail }, runJump, .{self}),
-            .JumpIfFalse => try @call(.{ .modifier = .always_tail }, runJumpIfFalse, .{self}),
-            .Loop => try @call(.{ .modifier = .always_tail }, runLoop, .{self}),
-            .Call => try @call(.{ .modifier = .always_tail }, runCall, .{self}),
-            .Invoke => try @call(.{ .modifier = .always_tail }, runInvoke, .{self}),
-            .SuperInvoke => try @call(.{ .modifier = .always_tail }, runSuperInvoke, .{self}),
-            .Closure => try @call(.{ .modifier = .always_tail }, runClosure, .{self}),
-            .Constant => try @call(.{ .modifier = .always_tail }, runConstant, .{self}),
-            .Nil => try @call(.{ .modifier = .always_tail }, runNil, .{self}),
-            .True => try @call(.{ .modifier = .always_tail }, runTrue, .{self}),
-            .False => try @call(.{ .modifier = .always_tail }, runFalse, .{self}),
-            .Equal => try @call(.{ .modifier = .always_tail }, runEqual, .{self}),
-            .Greater => try @call(.{ .modifier = .always_tail }, runGreater, .{self}),
-            .Less => try @call(.{ .modifier = .always_tail }, runLess, .{self}),
-            .Negate => try @call(.{ .modifier = .always_tail }, runNegate, .{self}),
-            .Add => try @call(.{ .modifier = .always_tail }, runAdd, .{self}),
-            .Subtract => try @call(.{ .modifier = .always_tail }, runSubtract, .{self}),
-            .Multiply => try @call(.{ .modifier = .always_tail }, runMultiply, .{self}),
-            .Divide => try @call(.{ .modifier = .always_tail }, runDivide, .{self}),
-            .Not => try @call(.{ .modifier = .always_tail }, runNot, .{self}),
+            .Return => try @call(InstructionCallModifier, runReturn, .{self}),
+            .Pop => try @call(InstructionCallModifier, runPop, .{self}),
+            .GetLocal => try @call(InstructionCallModifier, runGetLocal, .{self}),
+            .SetLocal => try @call(InstructionCallModifier, runSetLocal, .{self}),
+            .GetGlobal => try @call(InstructionCallModifier, runGetGlobal, .{self}),
+            .DefineGlobal => try @call(InstructionCallModifier, runDefineGlobal, .{self}),
+            .SetGlobal => try @call(InstructionCallModifier, runSetGlobal, .{self}),
+            .GetUpvalue => try @call(InstructionCallModifier, runGetUpvalue, .{self}),
+            .SetUpvalue => try @call(InstructionCallModifier, runSetUpvalue, .{self}),
+            .GetProperty => try @call(InstructionCallModifier, runGetProperty, .{self}),
+            .SetProperty => try @call(InstructionCallModifier, runSetProperty, .{self}),
+            .GetSuper => try @call(InstructionCallModifier, runGetSuper, .{self}),
+            .CloseUpvalue => try @call(InstructionCallModifier, runCloseUpvalue, .{self}),
+            .Class => try @call(InstructionCallModifier, runClass, .{self}),
+            .Inherit => try @call(InstructionCallModifier, runInherit, .{self}),
+            .Method => try @call(InstructionCallModifier, runMethod, .{self}),
+            .Print => try @call(InstructionCallModifier, runPrint, .{self}),
+            .Jump => try @call(InstructionCallModifier, runJump, .{self}),
+            .JumpIfFalse => try @call(InstructionCallModifier, runJumpIfFalse, .{self}),
+            .Loop => try @call(InstructionCallModifier, runLoop, .{self}),
+            .Call => try @call(InstructionCallModifier, runCall, .{self}),
+            .Invoke => try @call(InstructionCallModifier, runInvoke, .{self}),
+            .SuperInvoke => try @call(InstructionCallModifier, runSuperInvoke, .{self}),
+            .Closure => try @call(InstructionCallModifier, runClosure, .{self}),
+            .Constant => try @call(InstructionCallModifier, runConstant, .{self}),
+            .Nil => try @call(InstructionCallModifier, runNil, .{self}),
+            .True => try @call(InstructionCallModifier, runTrue, .{self}),
+            .False => try @call(InstructionCallModifier, runFalse, .{self}),
+            .Equal => try @call(InstructionCallModifier, runEqual, .{self}),
+            .Greater => try @call(InstructionCallModifier, runGreater, .{self}),
+            .Less => try @call(InstructionCallModifier, runLess, .{self}),
+            .Negate => try @call(InstructionCallModifier, runNegate, .{self}),
+            .Add => try @call(InstructionCallModifier, runAdd, .{self}),
+            .Subtract => try @call(InstructionCallModifier, runSubtract, .{self}),
+            .Multiply => try @call(InstructionCallModifier, runMultiply, .{self}),
+            .Divide => try @call(InstructionCallModifier, runDivide, .{self}),
+            .Not => try @call(InstructionCallModifier, runNot, .{self}),
         }
     }
+
+    const DispatchCallModifier = .{ .modifier = .always_tail };
 
     fn runReturn(self: *VM) RuntimeErrors!void {
         const result = self.pop();
@@ -211,24 +215,24 @@ pub const VM = struct {
 
         try self.stack.resize(frame.start);
         self.push(result);
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runPop(self: *VM) RuntimeErrors!void {
         _ = self.pop();
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runGetLocal(self: *VM) RuntimeErrors!void {
         const slot = self.readByte();
         self.push(self.stack.items[self.currentFrame().start + slot]);
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runSetLocal(self: *VM) RuntimeErrors!void {
         const slot = self.readByte();
         self.stack.items[self.currentFrame().start + slot] = self.peek(0);
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runGetGlobal(self: *VM) RuntimeErrors!void {
@@ -238,7 +242,7 @@ pub const VM = struct {
             return self.runtimeError("Undefined variable '{s}'.", .{name.bytes});
         }
         self.push(value);
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runDefineGlobal(self: *VM) RuntimeErrors!void {
@@ -247,7 +251,7 @@ pub const VM = struct {
         // that we don't lose the value if the GC runs during
         // the set operation
         _ = self.pop();
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runSetGlobal(self: *VM) RuntimeErrors!void {
@@ -256,21 +260,21 @@ pub const VM = struct {
             _ = self.globals.delete(name);
             return self.runtimeError("Undefined variable '{s}'.", .{name.bytes});
         }
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runGetUpvalue(self: *VM) RuntimeErrors!void {
         const slot = self.readByte();
         // Upvalues are guaranteed to be filled in by the time we get here
         self.push(self.currentFrame().closure.upvalues[slot].?.location.*);
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runSetUpvalue(self: *VM) RuntimeErrors!void {
         const slot = self.readByte();
         // Upvalues are guaranteed to be filled in by the time we get here
         self.currentFrame().closure.upvalues[slot].?.location.* = self.peek(0);
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runGetProperty(self: *VM) RuntimeErrors!void {
@@ -294,7 +298,7 @@ pub const VM = struct {
                 }
             },
         }
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runSetProperty(self: *VM) RuntimeErrors!void {
@@ -314,25 +318,25 @@ pub const VM = struct {
                 self.push(value);
             },
         }
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runGetSuper(self: *VM) RuntimeErrors!void {
         const name = self.readString();
         const superclass = self.pop().asObj().asClass();
         try self.bindMethod(superclass, name);
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runCloseUpvalue(self: *VM) RuntimeErrors!void {
         self.closeUpvalues(&self.stack.items[self.stack.items.len - 2]);
         _ = self.pop();
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runClass(self: *VM) RuntimeErrors!void {
         self.push((try Obj.Class.create(self, self.readString())).obj.value());
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runInherit(self: *VM) RuntimeErrors!void {
@@ -350,48 +354,48 @@ pub const VM = struct {
         }
 
         _ = self.pop(); // Subclass
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runMethod(self: *VM) RuntimeErrors!void {
         try self.defineMethod(self.readString());
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runPrint(self: *VM) RuntimeErrors!void {
         try self.outWriter.print("{}\n", .{self.pop()});
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runJump(self: *VM) RuntimeErrors!void {
         const offset = self.readShort();
         self.currentFrame().ip += offset;
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runJumpIfFalse(self: *VM) RuntimeErrors!void {
         const offset = self.readShort();
         if (self.peek(0).isFalsey()) self.currentFrame().ip += offset;
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runLoop(self: *VM) RuntimeErrors!void {
         const offset = self.readShort();
         self.currentFrame().ip -= offset;
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runCall(self: *VM) RuntimeErrors!void {
         const argCount = self.readByte();
         try self.callValue(self.peek(argCount), argCount);
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runInvoke(self: *VM) RuntimeErrors!void {
         const method = self.readString();
         const argCount = self.readByte();
         try self.invoke(method, argCount);
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runSuperInvoke(self: *VM) RuntimeErrors!void {
@@ -399,7 +403,7 @@ pub const VM = struct {
         const argCount = self.readByte();
         const superclass = self.pop().asObj().asClass();
         try self.invokeFromClass(superclass, method, argCount);
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runClosure(self: *VM) RuntimeErrors!void {
@@ -424,36 +428,36 @@ pub const VM = struct {
                 upvalue.* = self.currentFrame().closure.upvalues[index];
             }
         }
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runConstant(self: *VM) RuntimeErrors!void {
         const constant = self.readByte();
         const value = self.currentChunk().constants.items[constant];
         self.push(value);
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runNil(self: *VM) RuntimeErrors!void {
         self.push(Value.nil());
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runTrue(self: *VM) RuntimeErrors!void {
         self.push(Value.fromBool(true));
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runFalse(self: *VM) RuntimeErrors!void {
         self.push(Value.fromBool(false));
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runEqual(self: *VM) RuntimeErrors!void {
         const b = self.pop();
         const a = self.pop();
         self.push(Value.fromBool(a.equals(b)));
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runGreater(self: *VM) RuntimeErrors!void {
@@ -463,7 +467,7 @@ pub const VM = struct {
             return self.runtimeError("Operands must be numbers.", .{});
         }
         self.push(Value.fromBool(lhs.asNumber() > rhs.asNumber()));
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runLess(self: *VM) RuntimeErrors!void {
@@ -473,14 +477,14 @@ pub const VM = struct {
             return self.runtimeError("Operands must be numbers.", .{});
         }
         self.push(Value.fromBool(lhs.asNumber() < rhs.asNumber()));
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runNegate(self: *VM) RuntimeErrors!void {
         const value = self.pop();
         if (!value.isNumber()) return self.runtimeError("Operand must be a number.", .{});
         self.push(Value.fromNumber(-value.asNumber()));
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runAdd(self: *VM) RuntimeErrors!void {
@@ -493,27 +497,27 @@ pub const VM = struct {
         } else {
             return self.runtimeError("Operands must be two numbers or two strings.", .{});
         }
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runSubtract(self: *VM) RuntimeErrors!void {
         try self.binaryNumericOp(sub);
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runMultiply(self: *VM) RuntimeErrors!void {
         try self.binaryNumericOp(mul);
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runDivide(self: *VM) RuntimeErrors!void {
         try self.binaryNumericOp(div);
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn runNot(self: *VM) RuntimeErrors!void {
         self.push(Value.fromBool(self.pop().isFalsey()));
-        try @call(.{ .modifier = .always_tail }, dispatch, .{self});
+        try @call(DispatchCallModifier, dispatch, .{self});
     }
 
     fn binaryNumericOp(self: *VM, comptime op: anytype) !void {
