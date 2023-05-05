@@ -133,7 +133,8 @@ pub const VM = struct {
         self.push(closure.obj.value());
 
         const currentFrame = try self.call(closure, 0);
-        try self.dispatch(currentFrame);
+        const code = currentFrame.closure.function.chunk.code.items;
+        try self.dispatch(currentFrame, code);
         // Pop the closure we put on the stack above
         _ = self.pop();
     }
@@ -142,60 +143,61 @@ pub const VM = struct {
 
     const InstructionCallModifier = .{ .modifier = .always_tail };
 
-    fn dispatch(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
+    fn dispatch(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
         if (debug.TRACE_EXECUTION) {
             // Print debugging information
             try self.printStack();
             _ = currentFrame.closure.function.chunk.disassembleInstruction(currentFrame.ip);
         }
 
-        const instruction = readByte(currentFrame);
+        const instruction = readByte(currentFrame, code);
         const opCode = @intToEnum(OpCode, instruction);
 
         switch (opCode) {
-            .Return => try @call(InstructionCallModifier, runReturn, .{ self, currentFrame }),
-            .Pop => try @call(InstructionCallModifier, runPop, .{ self, currentFrame }),
-            .GetLocal => try @call(InstructionCallModifier, runGetLocal, .{ self, currentFrame }),
-            .SetLocal => try @call(InstructionCallModifier, runSetLocal, .{ self, currentFrame }),
-            .GetGlobal => try @call(InstructionCallModifier, runGetGlobal, .{ self, currentFrame }),
-            .DefineGlobal => try @call(InstructionCallModifier, runDefineGlobal, .{ self, currentFrame }),
-            .SetGlobal => try @call(InstructionCallModifier, runSetGlobal, .{ self, currentFrame }),
-            .GetUpvalue => try @call(InstructionCallModifier, runGetUpvalue, .{ self, currentFrame }),
-            .SetUpvalue => try @call(InstructionCallModifier, runSetUpvalue, .{ self, currentFrame }),
-            .GetProperty => try @call(InstructionCallModifier, runGetProperty, .{ self, currentFrame }),
-            .SetProperty => try @call(InstructionCallModifier, runSetProperty, .{ self, currentFrame }),
-            .GetSuper => try @call(InstructionCallModifier, runGetSuper, .{ self, currentFrame }),
-            .CloseUpvalue => try @call(InstructionCallModifier, runCloseUpvalue, .{ self, currentFrame }),
-            .Class => try @call(InstructionCallModifier, runClass, .{ self, currentFrame }),
-            .Inherit => try @call(InstructionCallModifier, runInherit, .{ self, currentFrame }),
-            .Method => try @call(InstructionCallModifier, runMethod, .{ self, currentFrame }),
-            .Print => try @call(InstructionCallModifier, runPrint, .{ self, currentFrame }),
-            .Jump => try @call(InstructionCallModifier, runJump, .{ self, currentFrame }),
-            .JumpIfFalse => try @call(InstructionCallModifier, runJumpIfFalse, .{ self, currentFrame }),
-            .Loop => try @call(InstructionCallModifier, runLoop, .{ self, currentFrame }),
-            .Call => try @call(InstructionCallModifier, runCall, .{ self, currentFrame }),
-            .Invoke => try @call(InstructionCallModifier, runInvoke, .{ self, currentFrame }),
-            .SuperInvoke => try @call(InstructionCallModifier, runSuperInvoke, .{ self, currentFrame }),
-            .Closure => try @call(InstructionCallModifier, runClosure, .{ self, currentFrame }),
-            .Constant => try @call(InstructionCallModifier, runConstant, .{ self, currentFrame }),
-            .Nil => try @call(InstructionCallModifier, runNil, .{ self, currentFrame }),
-            .True => try @call(InstructionCallModifier, runTrue, .{ self, currentFrame }),
-            .False => try @call(InstructionCallModifier, runFalse, .{ self, currentFrame }),
-            .Equal => try @call(InstructionCallModifier, runEqual, .{ self, currentFrame }),
-            .Greater => try @call(InstructionCallModifier, runGreater, .{ self, currentFrame }),
-            .Less => try @call(InstructionCallModifier, runLess, .{ self, currentFrame }),
-            .Negate => try @call(InstructionCallModifier, runNegate, .{ self, currentFrame }),
-            .Add => try @call(InstructionCallModifier, runAdd, .{ self, currentFrame }),
-            .Subtract => try @call(InstructionCallModifier, runSubtract, .{ self, currentFrame }),
-            .Multiply => try @call(InstructionCallModifier, runMultiply, .{ self, currentFrame }),
-            .Divide => try @call(InstructionCallModifier, runDivide, .{ self, currentFrame }),
-            .Not => try @call(InstructionCallModifier, runNot, .{ self, currentFrame }),
+            .Return => try @call(InstructionCallModifier, runReturn, .{ self, currentFrame, code }),
+            .Pop => try @call(InstructionCallModifier, runPop, .{ self, currentFrame, code }),
+            .GetLocal => try @call(InstructionCallModifier, runGetLocal, .{ self, currentFrame, code }),
+            .SetLocal => try @call(InstructionCallModifier, runSetLocal, .{ self, currentFrame, code }),
+            .GetGlobal => try @call(InstructionCallModifier, runGetGlobal, .{ self, currentFrame, code }),
+            .DefineGlobal => try @call(InstructionCallModifier, runDefineGlobal, .{ self, currentFrame, code }),
+            .SetGlobal => try @call(InstructionCallModifier, runSetGlobal, .{ self, currentFrame, code }),
+            .GetUpvalue => try @call(InstructionCallModifier, runGetUpvalue, .{ self, currentFrame, code }),
+            .SetUpvalue => try @call(InstructionCallModifier, runSetUpvalue, .{ self, currentFrame, code }),
+            .GetProperty => try @call(InstructionCallModifier, runGetProperty, .{ self, currentFrame, code }),
+            .SetProperty => try @call(InstructionCallModifier, runSetProperty, .{ self, currentFrame, code }),
+            .GetSuper => try @call(InstructionCallModifier, runGetSuper, .{ self, currentFrame, code }),
+            .CloseUpvalue => try @call(InstructionCallModifier, runCloseUpvalue, .{ self, currentFrame, code }),
+            .Class => try @call(InstructionCallModifier, runClass, .{ self, currentFrame, code }),
+            .Inherit => try @call(InstructionCallModifier, runInherit, .{ self, currentFrame, code }),
+            .Method => try @call(InstructionCallModifier, runMethod, .{ self, currentFrame, code }),
+            .Print => try @call(InstructionCallModifier, runPrint, .{ self, currentFrame, code }),
+            .Jump => try @call(InstructionCallModifier, runJump, .{ self, currentFrame, code }),
+            .JumpIfFalse => try @call(InstructionCallModifier, runJumpIfFalse, .{ self, currentFrame, code }),
+            .Loop => try @call(InstructionCallModifier, runLoop, .{ self, currentFrame, code }),
+            .Call => try @call(InstructionCallModifier, runCall, .{ self, currentFrame, code }),
+            .Invoke => try @call(InstructionCallModifier, runInvoke, .{ self, currentFrame, code }),
+            .SuperInvoke => try @call(InstructionCallModifier, runSuperInvoke, .{ self, currentFrame, code }),
+            .Closure => try @call(InstructionCallModifier, runClosure, .{ self, currentFrame, code }),
+            .Constant => try @call(InstructionCallModifier, runConstant, .{ self, currentFrame, code }),
+            .Nil => try @call(InstructionCallModifier, runNil, .{ self, currentFrame, code }),
+            .True => try @call(InstructionCallModifier, runTrue, .{ self, currentFrame, code }),
+            .False => try @call(InstructionCallModifier, runFalse, .{ self, currentFrame, code }),
+            .Equal => try @call(InstructionCallModifier, runEqual, .{ self, currentFrame, code }),
+            .Greater => try @call(InstructionCallModifier, runGreater, .{ self, currentFrame, code }),
+            .Less => try @call(InstructionCallModifier, runLess, .{ self, currentFrame, code }),
+            .Negate => try @call(InstructionCallModifier, runNegate, .{ self, currentFrame, code }),
+            .Add => try @call(InstructionCallModifier, runAdd, .{ self, currentFrame, code }),
+            .Subtract => try @call(InstructionCallModifier, runSubtract, .{ self, currentFrame, code }),
+            .Multiply => try @call(InstructionCallModifier, runMultiply, .{ self, currentFrame, code }),
+            .Divide => try @call(InstructionCallModifier, runDivide, .{ self, currentFrame, code }),
+            .Not => try @call(InstructionCallModifier, runNot, .{ self, currentFrame, code }),
         }
     }
 
     const DispatchCallModifier = .{ .modifier = .always_tail };
 
-    fn runReturn(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
+    fn runReturn(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
+        _ = code;
         const start = currentFrame.start;
         const result = self.pop();
         _ = self.frames.pop();
@@ -207,69 +209,70 @@ pub const VM = struct {
         try self.stack.resize(start);
         self.push(result);
         const newFrame = &self.frames.items[self.frames.items.len - 1];
-        try @call(DispatchCallModifier, dispatch, .{ self, newFrame });
+        const newCode = newFrame.closure.function.chunk.code.items;
+        try @call(DispatchCallModifier, dispatch, .{ self, newFrame, newCode });
     }
 
-    fn runPop(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
+    fn runPop(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
         _ = self.pop();
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runGetLocal(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
-        const slot = readByte(currentFrame);
+    fn runGetLocal(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
+        const slot = readByte(currentFrame, code);
         self.push(self.stack.items[currentFrame.start + slot]);
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runSetLocal(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
-        const slot = readByte(currentFrame);
+    fn runSetLocal(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
+        const slot = readByte(currentFrame, code);
         self.stack.items[currentFrame.start + slot] = self.peek(0);
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runGetGlobal(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
-        const name = readString(currentFrame);
+    fn runGetGlobal(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
+        const name = readString(currentFrame, code);
         var value: Value = undefined;
         if (!self.globals.get(name, &value)) {
             return self.runtimeError("Undefined variable '{s}'.", .{name.bytes});
         }
         self.push(value);
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runDefineGlobal(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
-        _ = try self.globals.set(readString(currentFrame), self.peek(0));
+    fn runDefineGlobal(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
+        _ = try self.globals.set(readString(currentFrame, code), self.peek(0));
         // NOTE don’t pop until value is in the hash table so
         // that we don't lose the value if the GC runs during
         // the set operation
         _ = self.pop();
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runSetGlobal(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
-        const name = readString(currentFrame);
+    fn runSetGlobal(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
+        const name = readString(currentFrame, code);
         if (try self.globals.set(name, self.peek(0))) {
             _ = self.globals.delete(name);
             return self.runtimeError("Undefined variable '{s}'.", .{name.bytes});
         }
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runGetUpvalue(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
-        const slot = readByte(currentFrame);
+    fn runGetUpvalue(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
+        const slot = readByte(currentFrame, code);
         // Upvalues are guaranteed to be filled in by the time we get here
         self.push(currentFrame.closure.upvalues[slot].?.location.*);
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runSetUpvalue(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
-        const slot = readByte(currentFrame);
+    fn runSetUpvalue(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
+        const slot = readByte(currentFrame, code);
         // Upvalues are guaranteed to be filled in by the time we get here
         currentFrame.closure.upvalues[slot].?.location.* = self.peek(0);
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runGetProperty(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
+    fn runGetProperty(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
         const maybeObj = self.peek(0);
         if (!maybeObj.isObj()) return self.runtimeError("Only instances have properties.", .{});
         const obj = maybeObj.asObj();
@@ -279,7 +282,7 @@ pub const VM = struct {
             },
             .Instance => {
                 const instance = obj.asInstance();
-                const name = readString(currentFrame);
+                const name = readString(currentFrame, code);
 
                 var value: Value = undefined;
                 if (instance.fields.get(name, &value)) {
@@ -290,10 +293,10 @@ pub const VM = struct {
                 }
             },
         }
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runSetProperty(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
+    fn runSetProperty(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
         const maybeObj = self.peek(1);
         if (!maybeObj.isObj()) return self.runtimeError("Only instances have fields.", .{});
         const obj = maybeObj.asObj();
@@ -303,35 +306,35 @@ pub const VM = struct {
             },
             .Instance => {
                 const instance = obj.asInstance();
-                _ = try instance.fields.set(readString(currentFrame), self.peek(0));
+                _ = try instance.fields.set(readString(currentFrame, code), self.peek(0));
 
                 const value = self.pop();
                 _ = self.pop();
                 self.push(value);
             },
         }
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runGetSuper(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
-        const name = readString(currentFrame);
+    fn runGetSuper(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
+        const name = readString(currentFrame, code);
         const superclass = self.pop().asObj().asClass();
         try self.bindMethod(superclass, name);
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runCloseUpvalue(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
+    fn runCloseUpvalue(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
         self.closeUpvalues(&self.stack.items[self.stack.items.len - 2]);
         _ = self.pop();
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runClass(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
-        self.push((try Obj.Class.create(self, readString(currentFrame))).obj.value());
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+    fn runClass(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
+        self.push((try Obj.Class.create(self, readString(currentFrame, code))).obj.value());
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runInherit(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
+    fn runInherit(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
         const maybeObj = self.peek(1);
         if (!maybeObj.isObj()) return self.runtimeError("Superclass must be a class.", .{});
         const obj = maybeObj.asObj();
@@ -346,67 +349,70 @@ pub const VM = struct {
         }
 
         _ = self.pop(); // Subclass
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runMethod(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
-        try self.defineMethod(readString(currentFrame));
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+    fn runMethod(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
+        try self.defineMethod(readString(currentFrame, code));
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runPrint(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
+    fn runPrint(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
         try self.outWriter.print("{}\n", .{self.pop()});
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runJump(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
-        const offset = readShort(currentFrame);
+    fn runJump(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
+        const offset = readShort(currentFrame, code);
         currentFrame.ip += offset;
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runJumpIfFalse(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
-        const offset = readShort(currentFrame);
+    fn runJumpIfFalse(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
+        const offset = readShort(currentFrame, code);
         if (self.peek(0).isFalsey()) currentFrame.ip += offset;
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runLoop(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
-        const offset = readShort(currentFrame);
+    fn runLoop(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
+        const offset = readShort(currentFrame, code);
         currentFrame.ip -= offset;
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runCall(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
-        const argCount = readByte(currentFrame);
+    fn runCall(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
+        const argCount = readByte(currentFrame, code);
         const newFrame = try self.callValue(currentFrame, self.peek(argCount), argCount);
-        try @call(DispatchCallModifier, dispatch, .{ self, newFrame });
+        const newCode = newFrame.closure.function.chunk.code.items;
+        try @call(DispatchCallModifier, dispatch, .{ self, newFrame, newCode });
     }
 
-    fn runInvoke(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
-        const method = readString(currentFrame);
-        const argCount = readByte(currentFrame);
+    fn runInvoke(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
+        const method = readString(currentFrame, code);
+        const argCount = readByte(currentFrame, code);
         const newFrame = try self.invoke(currentFrame, method, argCount);
-        try @call(DispatchCallModifier, dispatch, .{ self, newFrame });
+        const newCode = newFrame.closure.function.chunk.code.items;
+        try @call(DispatchCallModifier, dispatch, .{ self, newFrame, newCode });
     }
 
-    fn runSuperInvoke(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
-        const method = readString(currentFrame);
-        const argCount = readByte(currentFrame);
+    fn runSuperInvoke(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
+        const method = readString(currentFrame, code);
+        const argCount = readByte(currentFrame, code);
         const superclass = self.pop().asObj().asClass();
         const newFrame = try self.invokeFromClass(superclass, method, argCount);
-        try @call(DispatchCallModifier, dispatch, .{ self, newFrame });
+        const newCode = newFrame.closure.function.chunk.code.items;
+        try @call(DispatchCallModifier, dispatch, .{ self, newFrame, newCode });
     }
 
-    fn runClosure(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
-        const constant = readByte(currentFrame);
+    fn runClosure(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
+        const constant = readByte(currentFrame, code);
         const value = currentFrame.closure.function.chunk.constants.items[constant];
         const function = value.asObj().asFunction();
         const closure = try Obj.Closure.create(self, function);
         self.push(closure.obj.value());
         for (closure.upvalues) |*upvalue| {
-            const isLocal = readByte(currentFrame) != 0;
-            const index = readByte(currentFrame);
+            const isLocal = readByte(currentFrame, code) != 0;
+            const index = readByte(currentFrame, code);
             if (isLocal) {
                 // WARNING if the stack is ever resized, this
                 // pointer into it becomes invalid. We can avoid
@@ -420,66 +426,66 @@ pub const VM = struct {
                 upvalue.* = currentFrame.closure.upvalues[index];
             }
         }
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runConstant(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
-        const constant = readByte(currentFrame);
+    fn runConstant(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
+        const constant = readByte(currentFrame, code);
         const value = currentFrame.closure.function.chunk.constants.items[constant];
         self.push(value);
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runNil(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
+    fn runNil(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
         self.push(Value.nil());
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runTrue(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
+    fn runTrue(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
         self.push(Value.fromBool(true));
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runFalse(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
+    fn runFalse(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
         self.push(Value.fromBool(false));
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runEqual(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
+    fn runEqual(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
         const b = self.pop();
         const a = self.pop();
         self.push(Value.fromBool(a.equals(b)));
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runGreater(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
+    fn runGreater(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
         const rhs = self.pop();
         const lhs = self.pop();
         if (!lhs.isNumber() or !rhs.isNumber()) {
             return self.runtimeError("Operands must be numbers.", .{});
         }
         self.push(Value.fromBool(lhs.asNumber() > rhs.asNumber()));
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runLess(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
+    fn runLess(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
         const rhs = self.pop();
         const lhs = self.pop();
         if (!lhs.isNumber() or !rhs.isNumber()) {
             return self.runtimeError("Operands must be numbers.", .{});
         }
         self.push(Value.fromBool(lhs.asNumber() < rhs.asNumber()));
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runNegate(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
+    fn runNegate(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
         const value = self.pop();
         if (!value.isNumber()) return self.runtimeError("Operand must be a number.", .{});
         self.push(Value.fromNumber(-value.asNumber()));
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runAdd(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
+    fn runAdd(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
         const rhs = self.pop();
         const lhs = self.pop();
         if (lhs.isObj() and rhs.isObj()) {
@@ -489,27 +495,27 @@ pub const VM = struct {
         } else {
             return self.runtimeError("Operands must be two numbers or two strings.", .{});
         }
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runSubtract(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
+    fn runSubtract(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
         try self.binaryNumericOp(sub);
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runMultiply(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
+    fn runMultiply(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
         try self.binaryNumericOp(mul);
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runDivide(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
+    fn runDivide(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
         try self.binaryNumericOp(div);
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
-    fn runNot(self: *VM, currentFrame: *CallFrame) RuntimeErrors!void {
+    fn runNot(self: *VM, currentFrame: *CallFrame, code: []u8) RuntimeErrors!void {
         self.push(Value.fromBool(self.pop().isFalsey()));
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame });
+        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code });
     }
 
     fn binaryNumericOp(self: *VM, comptime op: anytype) !void {
@@ -548,20 +554,19 @@ pub const VM = struct {
         }
     }
 
-    fn readByte(currentFrame: *CallFrame) u8 {
-        const byte = currentFrame.closure.function.chunk.code.items[currentFrame.ip];
+    fn readByte(currentFrame: *CallFrame, code: []u8) u8 {
+        const byte = code[currentFrame.ip];
         currentFrame.ip += 1;
         return byte;
     }
 
-    fn readShort(currentFrame: *CallFrame) u16 {
+    fn readShort(currentFrame: *CallFrame, code: []u8) u16 {
         currentFrame.ip += 2;
-        const items = currentFrame.closure.function.chunk.code.items;
-        return (@intCast(u16, items[currentFrame.ip - 2]) << 8) | items[currentFrame.ip - 1];
+        return (@intCast(u16, code[currentFrame.ip - 2]) << 8) | code[currentFrame.ip - 1];
     }
 
-    fn readString(currentFrame: *CallFrame) *Obj.String {
-        const constant = readByte(currentFrame);
+    fn readString(currentFrame: *CallFrame, code: []u8) *Obj.String {
+        const constant = readByte(currentFrame, code);
         const nameValue = currentFrame.closure.function.chunk.constants.items[constant];
         return nameValue.asObj().asString();
     }
