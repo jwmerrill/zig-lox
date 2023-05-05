@@ -138,12 +138,6 @@ pub const VM = struct {
         _ = self.pop();
     }
 
-    fn readString(currentFrame: *CallFrame) *Obj.String {
-        const constant = readByte(currentFrame);
-        const nameValue = currentFrame.closure.function.chunk.constants.items[constant];
-        return nameValue.asObj().asString();
-    }
-
     const RuntimeErrors = error{ OutOfMemory, RuntimeError } || std.os.WriteError;
 
     const InstructionCallModifier = .{ .modifier = .always_tail };
@@ -564,6 +558,12 @@ pub const VM = struct {
         currentFrame.ip += 2;
         const items = currentFrame.closure.function.chunk.code.items;
         return (@intCast(u16, items[currentFrame.ip - 2]) << 8) | items[currentFrame.ip - 1];
+    }
+
+    fn readString(currentFrame: *CallFrame) *Obj.String {
+        const constant = readByte(currentFrame);
+        const nameValue = currentFrame.closure.function.chunk.constants.items[constant];
+        return nameValue.asObj().asString();
     }
 
     pub fn push(self: *VM, value: Value) void {
