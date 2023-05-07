@@ -132,7 +132,7 @@ pub const VM = struct {
         _ = self.pop();
         self.push(closure.obj.value());
 
-        const currentFrame = try self.call(closure, 0);
+        const currentFrame = try self.call(closure, 0, 0);
         const code = currentFrame.closure.function.chunk.code.items;
         try self.dispatch(currentFrame, code, currentFrame.ip);
         // Pop the closure we put on the stack above
@@ -409,28 +409,28 @@ pub const VM = struct {
     }
 
     fn runCall(self: *VM, currentFrame: *CallFrame, code: []u8, ip: usize) RuntimeErrors!void {
+        const instructionBytes = 2;
         const argCount = readByte(code, ip + 1);
-        currentFrame.ip += 1;
-        const newFrame = try self.callValue(currentFrame, self.peek(argCount), argCount);
+        const newFrame = try self.callValue(currentFrame, self.peek(argCount), argCount, ip + instructionBytes);
         const newCode = newFrame.closure.function.chunk.code.items;
         try @call(DispatchCallModifier, dispatch, .{ self, newFrame, newCode, newFrame.ip });
     }
 
     fn runInvoke(self: *VM, currentFrame: *CallFrame, code: []u8, ip: usize) RuntimeErrors!void {
+        const instructionBytes = 3;
         const method = readStringFrame(currentFrame, code, ip + 1);
         const argCount = readByte(code, ip + 2);
-        currentFrame.ip += 2;
-        const newFrame = try self.invoke(currentFrame, method, argCount);
+        const newFrame = try self.invoke(currentFrame, method, argCount, ip + instructionBytes);
         const newCode = newFrame.closure.function.chunk.code.items;
         try @call(DispatchCallModifier, dispatch, .{ self, newFrame, newCode, newFrame.ip });
     }
 
     fn runSuperInvoke(self: *VM, currentFrame: *CallFrame, code: []u8, ip: usize) RuntimeErrors!void {
+        const instructionBytes = 3;
         const method = readStringFrame(currentFrame, code, ip + 1);
         const argCount = readByte(code, ip + 2);
-        currentFrame.ip += 2;
         const superclass = self.pop().asObj().asClass();
-        const newFrame = try self.invokeFromClass(superclass, method, argCount);
+        const newFrame = try self.invokeFromClass(superclass, method, argCount, ip + instructionBytes);
         const newCode = newFrame.closure.function.chunk.code.items;
         try @call(DispatchCallModifier, dispatch, .{ self, newFrame, newCode, newFrame.ip });
     }
@@ -635,7 +635,11 @@ pub const VM = struct {
         return self.stack.pop();
     }
 
-    fn call(self: *VM, closure: *Obj.Closure, argCount: usize) !*CallFrame {
+    fn call(self: *VM, closure: *Obj.Closure, argCount: usize, ip: usize) !*CallFrame {
+        if (self.frames.items.len > 0) {
+            self.frames.items[self.frames.items.len - 1].ip = ip;
+        }
+
         if (argCount != closure.function.arity) {
             const arity = closure.function.arity;
             return self.runtimeError("Expected {} arguments but got {}.", .{ arity, argCount });
@@ -662,7 +666,7 @@ pub const VM = struct {
         return &self.frames.items[self.frames.items.len - 1];
     }
 
-    fn callValue(self: *VM, currentFrame: *CallFrame, callee: Value, argCount: usize) !*CallFrame {
+    fn callValue(self: *VM, currentFrame: *CallFrame, callee: Value, argCount: usize, ip: usize) !*CallFrame {
         if (!callee.isObj()) return self.runtimeError("Can only call functions and classes.", .{});
 
         const obj = callee.asObj();
@@ -671,19 +675,20 @@ pub const VM = struct {
                 return self.runtimeError("Can only call functions and classes.", .{});
             },
             .Closure => {
-                return self.call(obj.asClosure(), argCount);
+                return self.call(obj.asClosure(), argCount, ip);
             },
             .NativeFunction => {
                 const args = self.stack.items[self.stack.items.len - 1 - argCount ..];
                 try self.stack.resize(self.stack.items.len - 1 - argCount);
                 const result = obj.asNativeFunction().function(args);
                 self.push(result);
+                currentFrame.ip = ip;
                 return currentFrame;
             },
             .BoundMethod => {
                 const bound = obj.asBoundMethod();
                 self.stack.items[self.stack.items.len - argCount - 1] = bound.receiver;
-                return self.call(bound.method, argCount);
+                return self.call(bound.method, argCount, ip);
             },
             .Class => {
                 const class = obj.asClass();
@@ -691,17 +696,18 @@ pub const VM = struct {
                 self.stack.items[self.stack.items.len - argCount - 1] = instance;
                 var initializer: Value = undefined;
                 if (class.methods.get(self.initString.?, &initializer)) {
-                    return self.call(initializer.asObj().asClosure(), argCount);
+                    return self.call(initializer.asObj().asClosure(), argCount, ip);
                 } else if (argCount != 0) {
                     return self.runtimeError("Expected 0 arguments but got {}.", .{argCount});
                 } else {
+                    currentFrame.ip = ip;
                     return currentFrame;
                 }
             },
         }
     }
 
-    fn invoke(self: *VM, currentFrame: *CallFrame, name: *Obj.String, argCount: u8) !*CallFrame {
+    fn invoke(self: *VM, currentFrame: *CallFrame, name: *Obj.String, argCount: u8, ip: usize) !*CallFrame {
         const receiver = self.peek(argCount).asObj();
 
         if (!receiver.isInstance()) {
@@ -713,19 +719,19 @@ pub const VM = struct {
         var value: Value = undefined;
         if (instance.fields.get(name, &value)) {
             self.stack.items[self.stack.items.len - argCount - 1] = value;
-            return self.callValue(currentFrame, value, argCount);
+            return self.callValue(currentFrame, value, argCount, ip);
         }
 
-        return self.invokeFromClass(instance.class, name, argCount);
+        return self.invokeFromClass(instance.class, name, argCount, ip);
     }
 
-    fn invokeFromClass(self: *VM, class: *Obj.Class, name: *Obj.String, argCount: u8) !*CallFrame {
+    fn invokeFromClass(self: *VM, class: *Obj.Class, name: *Obj.String, argCount: u8, ip: usize) !*CallFrame {
         var method: Value = undefined;
         if (!class.methods.get(name, &method)) {
             return self.runtimeError("Undefined property '{s}'.", .{name.bytes});
         }
 
-        return self.call(method.asObj().asClosure(), argCount);
+        return self.call(method.asObj().asClosure(), argCount, ip);
     }
 
     fn bindMethod(self: *VM, class: *Obj.Class, name: *Obj.String) !void {
