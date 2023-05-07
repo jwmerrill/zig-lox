@@ -32,6 +32,10 @@ fn div(x: f64, y: f64) f64 {
 
 const CallFrame = struct {
     closure: *Obj.Closure,
+    // Note, ip is not kept synchronized for the active call frame (i.e.
+    // the last call frame on the stack). The active ip is instead
+    // passed around through function parameters. This is an
+    // optimization to keep ip in a register.
     ip: usize,
     start: usize,
 };
@@ -132,9 +136,9 @@ pub const VM = struct {
         _ = self.pop();
         self.push(closure.obj.value());
 
-        const currentFrame = try self.call(closure, 0, 0);
-        const code = currentFrame.closure.function.chunk.code.items;
-        try self.dispatch(currentFrame, code, currentFrame.ip);
+        const newFrame = try self.call(closure, 0, 0);
+        const code = newFrame.closure.function.chunk.code.items;
+        try self.dispatch(newFrame, code, newFrame.ip);
         // Pop the closure we put on the stack above
         _ = self.pop();
     }
@@ -158,7 +162,6 @@ pub const VM = struct {
             _ = currentFrame.closure.function.chunk.disassembleInstruction(ip);
         }
 
-        currentFrame.ip = ip;
         const instruction = readByte(code, ip);
         const opCode = @intToEnum(OpCode, instruction);
 
