@@ -250,7 +250,7 @@ pub const VM = struct {
         const name = readStringFrame(currentFrame, code, ip + 1);
         var value: Value = undefined;
         if (!self.globals.get(name, &value)) {
-            return self.runtimeError("Undefined variable '{s}'.", .{name.bytes});
+            return self.runtimeError("Undefined variable '{s}'.", .{name.bytes}, ip);
         }
         self.push(value);
         try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, ip + instructionBytes });
@@ -271,7 +271,7 @@ pub const VM = struct {
         const name = readStringFrame(currentFrame, code, ip + 1);
         if (try self.globals.set(name, self.peek(0))) {
             _ = self.globals.delete(name);
-            return self.runtimeError("Undefined variable '{s}'.", .{name.bytes});
+            return self.runtimeError("Undefined variable '{s}'.", .{name.bytes}, ip);
         }
         try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, ip + instructionBytes });
     }
@@ -295,11 +295,11 @@ pub const VM = struct {
     fn runGetProperty(self: *VM, currentFrame: *CallFrame, code: []u8, ip: usize) RuntimeErrors!void {
         const instructionBytes = 2;
         const maybeObj = self.peek(0);
-        if (!maybeObj.isObj()) return self.runtimeError("Only instances have properties.", .{});
+        if (!maybeObj.isObj()) return self.runtimeError("Only instances have properties.", .{}, ip);
         const obj = maybeObj.asObj();
         switch (obj.objType) {
             .String, .Function, .NativeFunction, .Closure, .Upvalue, .Class, .BoundMethod => {
-                return self.runtimeError("Only instances have properties.", .{});
+                return self.runtimeError("Only instances have properties.", .{}, ip);
             },
             .Instance => {
                 const instance = obj.asInstance();
@@ -310,7 +310,7 @@ pub const VM = struct {
                     _ = self.pop(); // Instance.
                     self.push(value);
                 } else {
-                    try self.bindMethod(instance.class, name);
+                    try self.bindMethod(instance.class, name, ip);
                 }
             },
         }
@@ -320,11 +320,11 @@ pub const VM = struct {
     fn runSetProperty(self: *VM, currentFrame: *CallFrame, code: []u8, ip: usize) RuntimeErrors!void {
         const instructionBytes = 2;
         const maybeObj = self.peek(1);
-        if (!maybeObj.isObj()) return self.runtimeError("Only instances have fields.", .{});
+        if (!maybeObj.isObj()) return self.runtimeError("Only instances have fields.", .{}, ip);
         const obj = maybeObj.asObj();
         switch (obj.objType) {
             .String, .Function, .NativeFunction, .Closure, .Upvalue, .Class, .BoundMethod => {
-                return self.runtimeError("Only instances have fields.", .{});
+                return self.runtimeError("Only instances have fields.", .{}, ip);
             },
             .Instance => {
                 const instance = obj.asInstance();
@@ -342,7 +342,7 @@ pub const VM = struct {
         const instructionBytes = 2;
         const name = readStringFrame(currentFrame, code, ip + 1);
         const superclass = self.pop().asObj().asClass();
-        try self.bindMethod(superclass, name);
+        try self.bindMethod(superclass, name, ip);
         try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, ip + instructionBytes });
     }
 
@@ -362,10 +362,10 @@ pub const VM = struct {
     fn runInherit(self: *VM, currentFrame: *CallFrame, code: []u8, ip: usize) RuntimeErrors!void {
         const instructionBytes = 1;
         const maybeObj = self.peek(1);
-        if (!maybeObj.isObj()) return self.runtimeError("Superclass must be a class.", .{});
+        if (!maybeObj.isObj()) return self.runtimeError("Superclass must be a class.", .{}, ip);
         const obj = maybeObj.asObj();
         if (!obj.isClass()) {
-            return self.runtimeError("Superclass must be a class.", .{});
+            return self.runtimeError("Superclass must be a class.", .{}, ip);
         }
         const superclass = obj.asClass();
         const subclass = self.peek(0).asObj().asClass();
@@ -502,7 +502,7 @@ pub const VM = struct {
         const rhs = self.pop();
         const lhs = self.pop();
         if (!lhs.isNumber() or !rhs.isNumber()) {
-            return self.runtimeError("Operands must be numbers.", .{});
+            return self.runtimeError("Operands must be numbers.", .{}, ip);
         }
         self.push(Value.fromBool(lhs.asNumber() > rhs.asNumber()));
         try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, ip + instructionBytes });
@@ -513,7 +513,7 @@ pub const VM = struct {
         const rhs = self.pop();
         const lhs = self.pop();
         if (!lhs.isNumber() or !rhs.isNumber()) {
-            return self.runtimeError("Operands must be numbers.", .{});
+            return self.runtimeError("Operands must be numbers.", .{}, ip);
         }
         self.push(Value.fromBool(lhs.asNumber() < rhs.asNumber()));
         try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, ip + instructionBytes });
@@ -522,7 +522,7 @@ pub const VM = struct {
     fn runNegate(self: *VM, currentFrame: *CallFrame, code: []u8, ip: usize) RuntimeErrors!void {
         const instructionBytes = 1;
         const value = self.pop();
-        if (!value.isNumber()) return self.runtimeError("Operand must be a number.", .{});
+        if (!value.isNumber()) return self.runtimeError("Operand must be a number.", .{}, ip);
         self.push(Value.fromNumber(-value.asNumber()));
         try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, ip + instructionBytes });
     }
@@ -532,30 +532,30 @@ pub const VM = struct {
         const rhs = self.pop();
         const lhs = self.pop();
         if (lhs.isObj() and rhs.isObj()) {
-            try self.concatenate(lhs.asObj(), rhs.asObj());
+            try self.concatenate(lhs.asObj(), rhs.asObj(), ip);
         } else if (lhs.isNumber() and rhs.isNumber()) {
             self.push(Value.fromNumber(lhs.asNumber() + rhs.asNumber()));
         } else {
-            return self.runtimeError("Operands must be two numbers or two strings.", .{});
+            return self.runtimeError("Operands must be two numbers or two strings.", .{}, ip);
         }
         try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, ip + instructionBytes });
     }
 
     fn runSubtract(self: *VM, currentFrame: *CallFrame, code: []u8, ip: usize) RuntimeErrors!void {
         const instructionBytes = 1;
-        try self.binaryNumericOp(sub);
+        try self.binaryNumericOp(sub, ip);
         try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, ip + instructionBytes });
     }
 
     fn runMultiply(self: *VM, currentFrame: *CallFrame, code: []u8, ip: usize) RuntimeErrors!void {
         const instructionBytes = 1;
-        try self.binaryNumericOp(mul);
+        try self.binaryNumericOp(mul, ip);
         try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, ip + instructionBytes });
     }
 
     fn runDivide(self: *VM, currentFrame: *CallFrame, code: []u8, ip: usize) RuntimeErrors!void {
         const instructionBytes = 1;
-        try self.binaryNumericOp(div);
+        try self.binaryNumericOp(div, ip);
         try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, ip + instructionBytes });
     }
 
@@ -565,23 +565,23 @@ pub const VM = struct {
         try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, ip + instructionBytes });
     }
 
-    fn binaryNumericOp(self: *VM, comptime op: anytype) !void {
+    fn binaryNumericOp(self: *VM, comptime op: anytype, ip: usize) !void {
         const rhs = self.pop();
         const lhs = self.pop();
         if (!lhs.isNumber() or !rhs.isNumber()) {
-            return self.runtimeError("Operands must be numbers.", .{});
+            return self.runtimeError("Operands must be numbers.", .{}, ip);
         }
         self.push(Value.fromNumber(op(lhs.asNumber(), rhs.asNumber())));
     }
 
-    fn concatenate(self: *VM, lhs: *Obj, rhs: *Obj) !void {
+    fn concatenate(self: *VM, lhs: *Obj, rhs: *Obj, ip: usize) !void {
         switch (lhs.objType) {
             .Function, .NativeFunction, .Closure, .Upvalue, .Class, .Instance, .BoundMethod => {
-                return self.runtimeError("Operands must be strings.", .{});
+                return self.runtimeError("Operands must be strings.", .{}, ip);
             },
             .String => switch (rhs.objType) {
                 .Function, .NativeFunction, .Closure, .Upvalue, .Class, .Instance, .BoundMethod => {
-                    return self.runtimeError("Operands must be strings.", .{});
+                    return self.runtimeError("Operands must be strings.", .{}, ip);
                 },
                 .String => {
                     // Temporarily put the strings back on the stack so
@@ -638,11 +638,11 @@ pub const VM = struct {
     fn call(self: *VM, closure: *Obj.Closure, argCount: usize, ip: usize) !*CallFrame {
         if (argCount != closure.function.arity) {
             const arity = closure.function.arity;
-            return self.runtimeError("Expected {} arguments but got {}.", .{ arity, argCount });
+            return self.runtimeError("Expected {} arguments but got {}.", .{ arity, argCount }, ip);
         }
 
         if (self.frames.items.len == FRAMES_MAX) {
-            return self.runtimeError("Stack overflow.", .{});
+            return self.runtimeError("Stack overflow.", .{}, ip);
         }
 
         if (self.frames.items.len > 0) {
@@ -667,12 +667,12 @@ pub const VM = struct {
     }
 
     fn callValue(self: *VM, currentFrame: *CallFrame, callee: Value, argCount: usize, ip: usize) !*CallFrame {
-        if (!callee.isObj()) return self.runtimeError("Can only call functions and classes.", .{});
+        if (!callee.isObj()) return self.runtimeError("Can only call functions and classes.", .{}, ip);
 
         const obj = callee.asObj();
         switch (obj.objType) {
             .String, .Function, .Upvalue, .Instance => {
-                return self.runtimeError("Can only call functions and classes.", .{});
+                return self.runtimeError("Can only call functions and classes.", .{}, ip);
             },
             .Closure => {
                 return self.call(obj.asClosure(), argCount, ip);
@@ -698,7 +698,7 @@ pub const VM = struct {
                 if (class.methods.get(self.initString.?, &initializer)) {
                     return self.call(initializer.asObj().asClosure(), argCount, ip);
                 } else if (argCount != 0) {
-                    return self.runtimeError("Expected 0 arguments but got {}.", .{argCount});
+                    return self.runtimeError("Expected 0 arguments but got {}.", .{argCount}, ip);
                 } else {
                     currentFrame.ip = ip;
                     return currentFrame;
@@ -711,7 +711,7 @@ pub const VM = struct {
         const receiver = self.peek(argCount).asObj();
 
         if (!receiver.isInstance()) {
-            return self.runtimeError("Only instances have methods.", .{});
+            return self.runtimeError("Only instances have methods.", .{}, ip);
         }
 
         const instance = receiver.asInstance();
@@ -728,16 +728,16 @@ pub const VM = struct {
     fn invokeFromClass(self: *VM, class: *Obj.Class, name: *Obj.String, argCount: u8, ip: usize) !*CallFrame {
         var method: Value = undefined;
         if (!class.methods.get(name, &method)) {
-            return self.runtimeError("Undefined property '{s}'.", .{name.bytes});
+            return self.runtimeError("Undefined property '{s}'.", .{name.bytes}, ip);
         }
 
         return self.call(method.asObj().asClosure(), argCount, ip);
     }
 
-    fn bindMethod(self: *VM, class: *Obj.Class, name: *Obj.String) !void {
+    fn bindMethod(self: *VM, class: *Obj.Class, name: *Obj.String, ip: usize) !void {
         var method: Value = undefined;
         if (!class.methods.get(name, &method)) {
-            return self.runtimeError("Undefined property '{s}'.", .{name.bytes});
+            return self.runtimeError("Undefined property '{s}'.", .{name.bytes}, ip);
         }
 
         const bound = try Obj.BoundMethod.create(self, self.peek(0), method.asObj().asClosure());
@@ -800,8 +800,13 @@ pub const VM = struct {
         std.debug.print("\n", .{});
     }
 
-    fn runtimeError(self: *VM, comptime message: []const u8, args: anytype) RuntimeErrors {
+    fn runtimeError(self: *VM, comptime message: []const u8, args: anytype, ip: usize) RuntimeErrors {
         @setCold(true);
+
+        // Synchronize ip of current frame
+        if (self.frames.items.len > 0) {
+            self.frames.items[self.frames.items.len - 1].ip = ip;
+        }
 
         try self.errWriter.print(message, args);
         try self.errWriter.print("\n", .{});
