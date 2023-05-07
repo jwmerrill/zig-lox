@@ -158,8 +158,8 @@ pub const VM = struct {
             _ = currentFrame.closure.function.chunk.disassembleInstruction(ip);
         }
 
+        currentFrame.ip = ip;
         const instruction = readByte(code, ip);
-        currentFrame.ip = ip + 1;
         const opCode = @intToEnum(OpCode, instruction);
 
         const args = .{ self, currentFrame, code, ip };
@@ -636,10 +636,6 @@ pub const VM = struct {
     }
 
     fn call(self: *VM, closure: *Obj.Closure, argCount: usize, ip: usize) !*CallFrame {
-        if (self.frames.items.len > 0) {
-            self.frames.items[self.frames.items.len - 1].ip = ip;
-        }
-
         if (argCount != closure.function.arity) {
             const arity = closure.function.arity;
             return self.runtimeError("Expected {} arguments but got {}.", .{ arity, argCount });
@@ -647,6 +643,10 @@ pub const VM = struct {
 
         if (self.frames.items.len == FRAMES_MAX) {
             return self.runtimeError("Stack overflow.", .{});
+        }
+
+        if (self.frames.items.len > 0) {
+            self.frames.items[self.frames.items.len - 1].ip = ip;
         }
 
         try self.frames.append(CallFrame{
@@ -809,7 +809,7 @@ pub const VM = struct {
         while (self.frames.items.len > 0) {
             const frame = self.frames.pop();
             const function = frame.closure.function;
-            const line = function.chunk.lines.items[frame.ip - 1];
+            const line = function.chunk.lines.items[frame.ip];
             const name = if (function.name) |str| str.bytes else "<script>";
             try self.errWriter.print("[line {}] in {s}\n", .{ line, name });
         }
