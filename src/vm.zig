@@ -140,7 +140,7 @@ pub const VM = struct {
         const newChunk = newFrame.closure.function.chunk;
         const code = newChunk.code.items;
         const constants = newChunk.constants.items;
-        try self.dispatch(newFrame, code, constants, newFrame.ip);
+        try self.dispatch(code, constants, newFrame.ip);
         // Pop the closure we put on the stack above
         _ = self.pop();
     }
@@ -148,6 +148,10 @@ pub const VM = struct {
     const RuntimeErrors = error{ OutOfMemory, RuntimeError } || std.os.WriteError;
 
     const InstructionCallModifier = .{ .modifier = .always_tail };
+
+    fn getCurrentFrame(self: *VM) *CallFrame {
+        return &self.frames.items[self.frames.items.len - 1];
+    }
 
     // Invariant: when we get to dispatch, we need to be at the "tag" of an instruction
     //
@@ -157,17 +161,17 @@ pub const VM = struct {
     // Instead, we should decode any data associated with an instruction
     // at the start of the instruction and simultaneously compute the
     // location of the next instruction
-    fn dispatch(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn dispatch(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         if (debug.TRACE_EXECUTION) {
             // Print debugging information
             try self.printStack();
-            _ = currentFrame.closure.function.chunk.disassembleInstruction(ip);
+            _ = self.getCurrentFrame().closure.function.chunk.disassembleInstruction(ip);
         }
 
         const instruction = readByte(code, ip);
         const opCode = @intToEnum(OpCode, instruction);
 
-        const args = .{ self, currentFrame, code, constants, ip };
+        const args = .{ self, code, constants, ip };
 
         switch (opCode) {
             .Return => try @call(InstructionCallModifier, runReturn, args),
@@ -212,11 +216,11 @@ pub const VM = struct {
 
     const DispatchCallModifier = .{ .modifier = .always_tail };
 
-    fn runReturn(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runReturn(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         _ = constants;
         _ = ip;
         _ = code;
-        const start = currentFrame.start;
+        const start = self.getCurrentFrame().start;
         const result = self.pop();
         _ = self.frames.pop();
 
@@ -226,34 +230,34 @@ pub const VM = struct {
 
         try self.stack.resize(start);
         self.push(result);
-        const newFrame = &self.frames.items[self.frames.items.len - 1];
+        const newFrame = self.getCurrentFrame();
         const newChunk = newFrame.closure.function.chunk;
         const newCode = newChunk.code.items;
         const newConstants = newChunk.constants.items;
-        try @call(DispatchCallModifier, dispatch, .{ self, newFrame, newCode, newConstants, newFrame.ip });
+        try @call(DispatchCallModifier, dispatch, .{ self, newCode, newConstants, newFrame.ip });
     }
 
-    fn runPop(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runPop(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 1;
         _ = self.pop();
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runGetLocal(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runGetLocal(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 2;
         const slot = readByte(code, ip + 1);
-        self.push(self.stack.items[currentFrame.start + slot]);
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        self.push(self.stack.items[self.getCurrentFrame().start + slot]);
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runSetLocal(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runSetLocal(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 2;
         const slot = readByte(code, ip + 1);
-        self.stack.items[currentFrame.start + slot] = self.peek(0);
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        self.stack.items[self.getCurrentFrame().start + slot] = self.peek(0);
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runGetGlobal(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runGetGlobal(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 2;
         const name = readString(code, constants, ip + 1);
         var value: Value = undefined;
@@ -261,46 +265,46 @@ pub const VM = struct {
             return self.runtimeError("Undefined variable '{s}'.", .{name.bytes}, ip);
         }
         self.push(value);
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runDefineGlobal(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runDefineGlobal(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 2;
         _ = try self.globals.set(readString(code, constants, ip + 1), self.peek(0));
         // NOTE don’t pop until value is in the hash table so
         // that we don't lose the value if the GC runs during
         // the set operation
         _ = self.pop();
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runSetGlobal(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runSetGlobal(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 2;
         const name = readString(code, constants, ip + 1);
         if (try self.globals.set(name, self.peek(0))) {
             _ = self.globals.delete(name);
             return self.runtimeError("Undefined variable '{s}'.", .{name.bytes}, ip);
         }
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runGetUpvalue(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runGetUpvalue(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 2;
         const slot = readByte(code, ip + 1);
         // Upvalues are guaranteed to be filled in by the time we get here
-        self.push(currentFrame.closure.upvalues[slot].?.location.*);
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        self.push(self.getCurrentFrame().closure.upvalues[slot].?.location.*);
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runSetUpvalue(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runSetUpvalue(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 2;
         const slot = readByte(code, ip + 1);
         // Upvalues are guaranteed to be filled in by the time we get here
-        currentFrame.closure.upvalues[slot].?.location.* = self.peek(0);
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        self.getCurrentFrame().closure.upvalues[slot].?.location.* = self.peek(0);
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runGetProperty(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runGetProperty(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 2;
         const maybeObj = self.peek(0);
         if (!maybeObj.isObj()) return self.runtimeError("Only instances have properties.", .{}, ip);
@@ -322,10 +326,10 @@ pub const VM = struct {
                 }
             },
         }
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runSetProperty(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runSetProperty(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 2;
         const maybeObj = self.peek(1);
         if (!maybeObj.isObj()) return self.runtimeError("Only instances have fields.", .{}, ip);
@@ -343,31 +347,31 @@ pub const VM = struct {
                 self.push(value);
             },
         }
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runGetSuper(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runGetSuper(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 2;
         const name = readString(code, constants, ip + 1);
         const superclass = self.pop().asObj().asClass();
         try self.bindMethod(superclass, name, ip);
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runCloseUpvalue(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runCloseUpvalue(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 1;
         self.closeUpvalues(&self.stack.items[self.stack.items.len - 2]);
         _ = self.pop();
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runClass(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runClass(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 2;
         self.push((try Obj.Class.create(self, readString(code, constants, ip + 1))).obj.value());
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runInherit(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runInherit(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 1;
         const maybeObj = self.peek(1);
         if (!maybeObj.isObj()) return self.runtimeError("Superclass must be a class.", .{}, ip);
@@ -383,63 +387,62 @@ pub const VM = struct {
         }
 
         _ = self.pop(); // Subclass
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runMethod(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runMethod(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 2;
         try self.defineMethod(readString(code, constants, ip + 1));
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runPrint(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runPrint(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 1;
         try self.outWriter.print("{}\n", .{self.pop()});
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runJump(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runJump(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 3;
         const offset = readShort(code, ip + 1);
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes + offset });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes + offset });
     }
 
-    fn runJumpIfFalse(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runJumpIfFalse(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 3;
         const offset = if (self.peek(0).isFalsey()) readShort(code, ip + 1) else 0;
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes + offset });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes + offset });
     }
 
-    fn runLoop(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runLoop(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 3;
         const offset = readShort(code, ip + 1);
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes - offset });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes - offset });
     }
 
-    fn runCall(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runCall(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         _ = constants;
         const instructionBytes = 2;
         const argCount = readByte(code, ip + 1);
-        const newFrame = try self.callValue(currentFrame, self.peek(argCount), argCount, ip + instructionBytes);
+        const newFrame = try self.callValue(self.peek(argCount), argCount, ip + instructionBytes);
         const newChunk = newFrame.closure.function.chunk;
         const newCode = newChunk.code.items;
         const newConstants = newChunk.constants.items;
-        try @call(DispatchCallModifier, dispatch, .{ self, newFrame, newCode, newConstants, newFrame.ip });
+        try @call(DispatchCallModifier, dispatch, .{ self, newCode, newConstants, newFrame.ip });
     }
 
-    fn runInvoke(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runInvoke(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 3;
         const method = readString(code, constants, ip + 1);
         const argCount = readByte(code, ip + 2);
-        const newFrame = try self.invoke(currentFrame, method, argCount, ip + instructionBytes);
+        const newFrame = try self.invoke(method, argCount, ip + instructionBytes);
         const newChunk = newFrame.closure.function.chunk;
         const newCode = newChunk.code.items;
         const newConstants = newChunk.constants.items;
-        try @call(DispatchCallModifier, dispatch, .{ self, newFrame, newCode, newConstants, newFrame.ip });
+        try @call(DispatchCallModifier, dispatch, .{ self, newCode, newConstants, newFrame.ip });
     }
 
-    fn runSuperInvoke(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
-        _ = currentFrame;
+    fn runSuperInvoke(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 3;
         const method = readString(code, constants, ip + 1);
         const argCount = readByte(code, ip + 2);
@@ -448,10 +451,10 @@ pub const VM = struct {
         const newChunk = newFrame.closure.function.chunk;
         const newCode = newChunk.code.items;
         const newConstants = newChunk.constants.items;
-        try @call(DispatchCallModifier, dispatch, .{ self, newFrame, newCode, newConstants, newFrame.ip });
+        try @call(DispatchCallModifier, dispatch, .{ self, newCode, newConstants, newFrame.ip });
     }
 
-    fn runClosure(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runClosure(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         var instructionBytes: usize = 2; // note, modified in loop below
         const constant = readByte(code, ip + 1);
         const value = constants[constant];
@@ -471,49 +474,49 @@ pub const VM = struct {
                 // stack past that. Upvalues needing to be able
                 // to point to either the stack or the heap
                 // keeps us from growing the stack.
-                upvalue.* = try self.captureUpvalue(&self.stack.items[currentFrame.start + index]);
+                upvalue.* = try self.captureUpvalue(&self.stack.items[self.getCurrentFrame().start + index]);
             } else {
-                upvalue.* = currentFrame.closure.upvalues[index];
+                upvalue.* = self.getCurrentFrame().closure.upvalues[index];
             }
         }
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runConstant(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runConstant(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 2;
         const constant = readByte(code, ip + 1);
         const value = constants[constant];
         self.push(value);
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runNil(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runNil(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 1;
         self.push(Value.nil());
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runTrue(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runTrue(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 1;
         self.push(Value.fromBool(true));
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runFalse(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runFalse(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 1;
         self.push(Value.fromBool(false));
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runEqual(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runEqual(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 1;
         const b = self.pop();
         const a = self.pop();
         self.push(Value.fromBool(a.equals(b)));
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runGreater(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runGreater(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 1;
         const rhs = self.pop();
         const lhs = self.pop();
@@ -521,10 +524,10 @@ pub const VM = struct {
             return self.runtimeError("Operands must be numbers.", .{}, ip);
         }
         self.push(Value.fromBool(lhs.asNumber() > rhs.asNumber()));
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runLess(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runLess(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 1;
         const rhs = self.pop();
         const lhs = self.pop();
@@ -532,18 +535,18 @@ pub const VM = struct {
             return self.runtimeError("Operands must be numbers.", .{}, ip);
         }
         self.push(Value.fromBool(lhs.asNumber() < rhs.asNumber()));
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runNegate(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runNegate(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 1;
         const value = self.pop();
         if (!value.isNumber()) return self.runtimeError("Operand must be a number.", .{}, ip);
         self.push(Value.fromNumber(-value.asNumber()));
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runAdd(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runAdd(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 1;
         const rhs = self.pop();
         const lhs = self.pop();
@@ -554,31 +557,31 @@ pub const VM = struct {
         } else {
             return self.runtimeError("Operands must be two numbers or two strings.", .{}, ip);
         }
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runSubtract(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runSubtract(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 1;
         try self.binaryNumericOp(sub, ip);
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runMultiply(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runMultiply(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 1;
         try self.binaryNumericOp(mul, ip);
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runDivide(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runDivide(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 1;
         try self.binaryNumericOp(div, ip);
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
-    fn runNot(self: *VM, currentFrame: *CallFrame, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
+    fn runNot(self: *VM, code: []u8, constants: []Value, ip: usize) RuntimeErrors!void {
         const instructionBytes = 1;
         self.push(Value.fromBool(self.pop().isFalsey()));
-        try @call(DispatchCallModifier, dispatch, .{ self, currentFrame, code, constants, ip + instructionBytes });
+        try @call(DispatchCallModifier, dispatch, .{ self, code, constants, ip + instructionBytes });
     }
 
     fn binaryNumericOp(self: *VM, comptime op: anytype, ip: usize) !void {
@@ -677,7 +680,7 @@ pub const VM = struct {
         return &self.frames.items[self.frames.items.len - 1];
     }
 
-    fn callValue(self: *VM, currentFrame: *CallFrame, callee: Value, argCount: usize, ip: usize) !*CallFrame {
+    fn callValue(self: *VM, callee: Value, argCount: usize, ip: usize) !*CallFrame {
         if (!callee.isObj()) return self.runtimeError("Can only call functions and classes.", .{}, ip);
 
         const obj = callee.asObj();
@@ -693,6 +696,7 @@ pub const VM = struct {
                 try self.stack.resize(self.stack.items.len - 1 - argCount);
                 const result = obj.asNativeFunction().function(args);
                 self.push(result);
+                const currentFrame = self.getCurrentFrame();
                 currentFrame.ip = ip;
                 return currentFrame;
             },
@@ -711,6 +715,7 @@ pub const VM = struct {
                 } else if (argCount != 0) {
                     return self.runtimeError("Expected 0 arguments but got {}.", .{argCount}, ip);
                 } else {
+                    const currentFrame = self.getCurrentFrame();
                     currentFrame.ip = ip;
                     return currentFrame;
                 }
@@ -718,7 +723,7 @@ pub const VM = struct {
         }
     }
 
-    fn invoke(self: *VM, currentFrame: *CallFrame, name: *Obj.String, argCount: u8, ip: usize) !*CallFrame {
+    fn invoke(self: *VM, name: *Obj.String, argCount: u8, ip: usize) !*CallFrame {
         const receiver = self.peek(argCount).asObj();
 
         if (!receiver.isInstance()) {
@@ -730,7 +735,7 @@ pub const VM = struct {
         var value: Value = undefined;
         if (instance.fields.get(name, &value)) {
             self.stack.items[self.stack.items.len - argCount - 1] = value;
-            return self.callValue(currentFrame, value, argCount, ip);
+            return self.callValue(value, argCount, ip);
         }
 
         return self.invokeFromClass(instance.class, name, argCount, ip);
