@@ -660,7 +660,7 @@ pub const VM = struct {
         }
 
         if (self.frames.items.len > 0) {
-            self.frames.items[self.frames.items.len - 1].ip = ip;
+            self.getCurrentFrame().ip = ip;
         }
 
         try self.frames.append(CallFrame{
@@ -677,7 +677,7 @@ pub const VM = struct {
             .start = self.stack.items.len - argCount - 1,
         });
 
-        return &self.frames.items[self.frames.items.len - 1];
+        return self.getCurrentFrame();
     }
 
     fn callValue(self: *VM, callee: Value, argCount: usize, ip: usize) !*CallFrame {
@@ -821,7 +821,7 @@ pub const VM = struct {
 
         // Synchronize ip of current frame
         if (self.frames.items.len > 0) {
-            self.frames.items[self.frames.items.len - 1].ip = ip;
+            self.getCurrentFrame().ip = ip;
         }
 
         try self.errWriter.print(message, args);
