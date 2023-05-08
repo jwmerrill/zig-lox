@@ -8,7 +8,7 @@ TEST_FILES=`find test -name "*.lox" \
 	`
 
 # NOTE, skipping string_equality benchmark because it gives an error
-# about too many constants in one chunk
+# about too many constants in one chunk. clox gives the same error.
 BENCHMARK_FILES=`find test/benchmark -name "*.lox" \
 	| grep -v test/benchmark/string_equality.lox \
 	`
