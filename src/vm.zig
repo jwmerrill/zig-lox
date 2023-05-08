@@ -46,7 +46,7 @@ const STACK_MAX = FRAMES_MAX * (std.math.maxInt(u8) + 1);
 pub const VM = struct {
     gcAllocatorInstance: GCAllocator,
     allocator: Allocator,
-    frames: ArrayList(CallFrame), // NOTE, book uses a fixed size stack
+    frames: FixedCapacityStack(CallFrame),
     stack: FixedCapacityStack(Value),
     objects: ?*Obj,
     // Note: book uses a dynamic array for the stack of gray objects (a
@@ -90,13 +90,13 @@ pub const VM = struct {
         // these operations can fail, and allocation can always fail
         // with error.OutOfMemory
         self.allocator = allocator;
-        self.frames = std.ArrayList(CallFrame).init(allocator);
         self.strings = Table.init(allocator);
         self.globals = Table.init(allocator);
         self.outWriter = outWriter;
         self.errWriter = errWriter;
 
         // These ops all allocate
+        self.frames = try FixedCapacityStack(CallFrame).init(backingAllocator, FRAMES_MAX);
         self.stack = try FixedCapacityStack(Value).init(backingAllocator, STACK_MAX);
         self.initString = try Obj.String.copy(self, "init");
         try self.defineNative("clock", clock);
@@ -663,7 +663,7 @@ pub const VM = struct {
             self.getCurrentFrame().ip = ip;
         }
 
-        try self.frames.append(CallFrame{
+        self.frames.append(CallFrame{
             .closure = closure,
             .ip = 0,
             // Stack position where this call frame begins
