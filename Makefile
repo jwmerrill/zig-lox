@@ -7,6 +7,12 @@ TEST_FILES=`find test -name "*.lox" \
 	| grep -v test/for/closure_in_body.lox \
 	`
 
+# NOTE, skipping string_equality benchmark because it gives an error
+# about too many constants in one chunk. clox gives the same error.
+BENCHMARK_FILES=`find test/benchmark -name "*.lox" \
+	| grep -v test/benchmark/string_equality.lox \
+	`
+
 all: lox
 
 .PHONY: clean
@@ -47,3 +53,6 @@ www-server: www
 
 test: lox
 	zig run util/test.zig -- bin/lox $(TEST_FILES)
+
+benchmark: release
+	zig run util/benchmark.zig -- bin/lox $(BENCHMARK_FILES)

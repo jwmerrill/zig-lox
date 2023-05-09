@@ -12,6 +12,8 @@ pub fn build(b: *Builder) void {
     const mode = b.standardReleaseOptions();
 
     const exe = b.addExecutable("lox", "src/main.zig");
+    // Uncomment to emit asm
+    // exe.emit_asm = .emit;
     exe.setTarget(target);
     exe.setBuildMode(mode);
     exe.install();
