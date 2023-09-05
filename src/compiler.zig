@@ -105,7 +105,7 @@ const Precedence = enum(u8) {
     Primary,
 
     pub fn next(self: Precedence) Precedence {
-        return @intToEnum(Precedence, @enumToInt(self) + 1);
+        return @as(Precedence, @enumFromInt(@intFromEnum(self) + 1));
     }
 };
 
@@ -249,8 +249,8 @@ pub const Parser = struct {
             try self.err("Too much code to jump over.");
         }
 
-        self.currentChunk().code.items[offset] = @intCast(u8, (jump >> 8) & 0xff);
-        self.currentChunk().code.items[offset + 1] = @intCast(u8, jump & 0xff);
+        self.currentChunk().code.items[offset] = @as(u8, @intCast((jump >> 8) & 0xff));
+        self.currentChunk().code.items[offset + 1] = @as(u8, @intCast(jump & 0xff));
     }
 
     fn emitLoop(self: *Parser, loopStart: usize) !void {
@@ -259,8 +259,8 @@ pub const Parser = struct {
         const offset = self.currentChunk().code.items.len - loopStart + 2;
         if (offset > maxInt(u16)) try self.err("Loop body too large.");
 
-        try self.emitByte(@intCast(u8, (offset >> 8) & 0xff));
-        try self.emitByte(@intCast(u8, offset & 0xff));
+        try self.emitByte(@as(u8, @intCast((offset >> 8) & 0xff)));
+        try self.emitByte(@as(u8, @intCast(offset & 0xff)));
     }
 
     fn emitByte(self: *Parser, byte: u8) !void {
@@ -320,7 +320,7 @@ pub const Parser = struct {
             return 0;
         }
 
-        return @intCast(u8, constant);
+        return @as(u8, @intCast(constant));
     }
 
     fn declaration(self: *Parser) !void {
@@ -633,10 +633,10 @@ pub const Parser = struct {
     fn parsePrecedence(self: *Parser, precedence: Precedence) CompilerErrors!void {
         try self.advance();
 
-        const canAssign = @enumToInt(precedence) <= @enumToInt(Precedence.Assignment);
+        const canAssign = @intFromEnum(precedence) <= @intFromEnum(Precedence.Assignment);
         try self.prefix(self.previous.tokenType, canAssign);
 
-        while (@enumToInt(precedence) <= @enumToInt(getPrecedence(self.current.tokenType))) {
+        while (@intFromEnum(precedence) <= @intFromEnum(getPrecedence(self.current.tokenType))) {
             try self.advance();
             try self.infix(self.previous.tokenType, canAssign);
         }
@@ -686,7 +686,7 @@ pub const Parser = struct {
         const depth = self.compiler.scopeDepth;
         if (depth == 0) return;
         var locals = &self.compiler.locals;
-        locals.items[locals.items.len - 1].depth = @intCast(isize, depth);
+        locals.items[locals.items.len - 1].depth = @as(isize, @intCast(depth));
     }
 
     fn identifierConstant(self: *Parser, name: []const u8) !u8 {
@@ -712,7 +712,7 @@ pub const Parser = struct {
     }
 
     fn addUpvalue(self: *Parser, compiler: *Compiler, index: u8, isLocal: bool) !usize {
-        for (compiler.upvalues.items) |upvalue, i| {
+        for (compiler.upvalues.items, 0..) |upvalue, i| {
             if (upvalue.index == index and upvalue.isLocal == isLocal) {
                 return i;
             }
@@ -742,7 +742,7 @@ pub const Parser = struct {
                 if (local.depth == -1) {
                     try self.err("Cannot read local variable in its own initializer.");
                 }
-                return @intCast(isize, locals.items.len - 1 - i);
+                return @as(isize, @intCast(locals.items.len - 1 - i));
             }
         }
 
@@ -753,15 +753,15 @@ pub const Parser = struct {
         if (compiler.enclosing) |enclosing| {
             const local = try self.resolveLocal(enclosing, name);
             if (local != -1) {
-                enclosing.locals.items[@intCast(u8, local)].isCaptured = true;
-                const index = try self.addUpvalue(compiler, @intCast(u8, local), true);
-                return @intCast(isize, index);
+                enclosing.locals.items[@as(u8, @intCast(local))].isCaptured = true;
+                const index = try self.addUpvalue(compiler, @as(u8, @intCast(local)), true);
+                return @as(isize, @intCast(index));
             }
 
             const upvalue = try self.resolveUpvalue(enclosing, name);
             if (upvalue != -1) {
-                const index = try self.addUpvalue(compiler, @intCast(u8, upvalue), false);
-                return @intCast(isize, index);
+                const index = try self.addUpvalue(compiler, @as(u8, @intCast(upvalue)), false);
+                return @as(isize, @intCast(index));
             }
         }
 
@@ -907,13 +907,13 @@ pub const Parser = struct {
         var resolvedArg = try self.resolveLocal(self.compiler, name);
 
         if (resolvedArg != -1) {
-            arg = @intCast(u8, resolvedArg);
+            arg = @as(u8, @intCast(resolvedArg));
             getOp = .GetLocal;
             setOp = .SetLocal;
         } else {
             const maybeArg = try self.resolveUpvalue(self.compiler, name);
             if (maybeArg != -1) {
-                arg = @intCast(u8, maybeArg);
+                arg = @as(u8, @intCast(maybeArg));
                 getOp = .GetUpvalue;
                 setOp = .SetUpvalue;
             } else {

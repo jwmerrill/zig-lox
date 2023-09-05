@@ -147,7 +147,7 @@ pub const VM = struct {
             }
 
             const instruction = self.readByte();
-            const opCode = @intToEnum(OpCode, instruction);
+            const opCode = @as(OpCode, @enumFromInt(instruction));
             try self.runOp(opCode);
             if (opCode == .Return and self.frames.items.len == 0) break;
         }
@@ -446,7 +446,7 @@ pub const VM = struct {
         const frame = self.currentFrame();
         frame.ip += 2;
         const items = self.currentChunk().code.items;
-        return (@intCast(u16, items[frame.ip - 2]) << 8) | items[frame.ip - 1];
+        return (@as(u16, @intCast(items[frame.ip - 2])) << 8) | items[frame.ip - 1];
     }
 
     pub fn push(self: *VM, value: Value) void {
@@ -563,7 +563,7 @@ pub const VM = struct {
         var maybeUpvalue = self.openUpvalues;
 
         while (maybeUpvalue) |upvalue| {
-            if (@ptrToInt(upvalue.location) <= @ptrToInt(local)) break;
+            if (@intFromPtr(upvalue.location) <= @intFromPtr(local)) break;
             prevUpvalue = upvalue;
             maybeUpvalue = upvalue.next;
         }
@@ -586,7 +586,7 @@ pub const VM = struct {
 
     fn closeUpvalues(self: *VM, last: *Value) void {
         while (self.openUpvalues) |openUpvalues| {
-            if (@ptrToInt(openUpvalues.location) < @ptrToInt(last)) break;
+            if (@intFromPtr(openUpvalues.location) < @intFromPtr(last)) break;
             const upvalue = openUpvalues;
             upvalue.closed = upvalue.location.*;
             upvalue.location = &upvalue.closed;

@@ -142,9 +142,9 @@ fn parse_test_file(test_path: []const u8) !Expected {
     }
 
     return Expected{
-        .output = output_buffer.toOwnedSlice(),
-        .runtime_error_message = runtime_error_buffer.toOwnedSlice(),
-        .compile_error_message = compile_error_buffer.toOwnedSlice(),
+        .output = try output_buffer.toOwnedSlice(),
+        .runtime_error_message = try runtime_error_buffer.toOwnedSlice(),
+        .compile_error_message = try compile_error_buffer.toOwnedSlice(),
         .exit_code = exit_code,
     };
 }
