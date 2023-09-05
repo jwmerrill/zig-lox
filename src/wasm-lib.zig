@@ -15,11 +15,11 @@ extern fn writeOut(ptr: usize, len: usize) void;
 extern fn writeErr(ptr: usize, len: usize) void;
 
 fn writeOutSlice(bytes: []const u8) void {
-    writeOut(@ptrToInt(bytes.ptr), bytes.len);
+    writeOut(@intFromPtr(bytes.ptr), bytes.len);
 }
 
 fn writeErrSlice(bytes: []const u8) void {
-    writeErr(@ptrToInt(bytes.ptr), bytes.len);
+    writeErr(@intFromPtr(bytes.ptr), bytes.len);
 }
 
 fn createVMPtr() !*VM {
@@ -38,7 +38,7 @@ fn createVMPtr() !*VM {
 
 export fn createVM() usize {
     var vm = createVMPtr() catch return 0;
-    return @ptrToInt(vm);
+    return @intFromPtr(vm);
 }
 
 export fn destroyVM(vm: *VM) void {
@@ -66,7 +66,7 @@ export fn run(input_ptr: [*]const u8, input_len: usize) usize {
 
 pub export fn alloc(len: usize) usize {
     var buf = allocator.alloc(u8, len) catch return 0;
-    return @ptrToInt(buf.ptr);
+    return @intFromPtr(buf.ptr);
 }
 
 pub export fn dealloc(ptr: [*]const u8, len: usize) void {

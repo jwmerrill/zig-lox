@@ -36,7 +36,7 @@ pub const NanBoxedValue = packed struct {
 
     pub fn asNumber(self: NanBoxedValue) f64 {
         std.debug.assert(self.isNumber());
-        return @bitCast(f64, self.data);
+        return @as(f64, @bitCast(self.data));
     }
 
     pub fn asBool(self: NanBoxedValue) bool {
@@ -46,11 +46,11 @@ pub const NanBoxedValue = packed struct {
 
     pub fn asObj(self: NanBoxedValue) *Obj {
         std.debug.assert(self.isObj());
-        return @intToPtr(*Obj, @intCast(usize, self.data & ~(SIGN_BIT | QNAN)));
+        return @as(*Obj, @ptrFromInt(@as(usize, @intCast(self.data & ~(SIGN_BIT | QNAN)))));
     }
 
     pub fn fromNumber(x: f64) NanBoxedValue {
-        return NanBoxedValue{ .data = @bitCast(u64, x) };
+        return NanBoxedValue{ .data = @as(u64, @bitCast(x)) };
     }
 
     pub fn fromBool(x: bool) NanBoxedValue {
@@ -58,7 +58,7 @@ pub const NanBoxedValue = packed struct {
     }
 
     pub fn fromObj(x: *Obj) NanBoxedValue {
-        return NanBoxedValue{ .data = SIGN_BIT | QNAN | @ptrToInt(x) };
+        return NanBoxedValue{ .data = SIGN_BIT | QNAN | @intFromPtr(x) };
     }
 
     pub fn nil() NanBoxedValue {

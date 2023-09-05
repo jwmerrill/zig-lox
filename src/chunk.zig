@@ -68,11 +68,11 @@ pub const Chunk = struct {
     }
 
     pub fn writeOp(self: *Chunk, op: OpCode, line: usize) !void {
-        try self.write(@enumToInt(op), line);
+        try self.write(@intFromEnum(op), line);
     }
 
     pub fn addConstant(self: *Chunk, value: Value) !u9 {
-        const index = @intCast(u9, self.constants.items.len);
+        const index = @as(u9, @intCast(self.constants.items.len));
         try self.constants.append(value);
         return index;
     }
@@ -98,7 +98,7 @@ pub const Chunk = struct {
         }
 
         // Print instruction
-        const instruction = @intToEnum(OpCode, self.code.items[offset]);
+        const instruction = @as(OpCode, @enumFromInt(self.code.items[offset]));
         return switch (instruction) {
             .Return => self.simpleInstruction("OP_RETURN", offset),
             .Pop => self.simpleInstruction("OP_POP", offset),
@@ -161,9 +161,9 @@ pub const Chunk = struct {
     }
 
     fn jumpInstruction(self: *Chunk, name: []const u8, sign: isize, offset: usize) usize {
-        var jump = @intCast(u16, self.code.items[offset + 1]) << 8;
+        var jump = @as(u16, @intCast(self.code.items[offset + 1])) << 8;
         jump |= self.code.items[offset + 2];
-        const target = @intCast(isize, offset) + 3 + sign * @intCast(isize, jump);
+        const target = @as(isize, @intCast(offset)) + 3 + sign * @as(isize, @intCast(jump));
         std.debug.print("{} {} -> {}\n", .{ name, offset, target });
         return offset + 3;
     }
