@@ -148,7 +148,8 @@ pub const Obj = struct {
 
         pub fn copy(vm: *VM, source: []const u8) !*String {
             const buffer = try vm.allocator.alloc(u8, source.len);
-            std.mem.copy(u8, buffer, source);
+            // std.mem.copy(u8, buffer, source);
+            @memcpy(buffer, source);
             return String.create(vm, buffer);
         }
 

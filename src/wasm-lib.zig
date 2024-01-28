@@ -37,7 +37,7 @@ fn createVMPtr() !*VM {
 }
 
 export fn createVM() usize {
-    var vm = createVMPtr() catch return 0;
+    const vm = createVMPtr() catch return 0;
     return @intFromPtr(vm);
 }
 
@@ -59,13 +59,13 @@ export fn interpret(vm: *VM, input_ptr: [*]const u8, input_len: usize) usize {
 }
 
 export fn run(input_ptr: [*]const u8, input_len: usize) usize {
-    var vm = createVMPtr() catch return 71;
+    const vm = createVMPtr() catch return 71;
     defer destroyVM(vm);
     return interpret(vm, input_ptr, input_len);
 }
 
 pub export fn alloc(len: usize) usize {
-    var buf = allocator.alloc(u8, len) catch return 0;
+    const buf = allocator.alloc(u8, len) catch return 0;
     return @intFromPtr(buf.ptr);
 }
 

@@ -43,7 +43,7 @@ pub const GCAllocator = struct {
                 return null;
             };
         }
-        var out = self.parent_allocator.rawAlloc(n, log2_ptr_align, ret_addr) orelse return null;
+        const out = self.parent_allocator.rawAlloc(n, log2_ptr_align, ret_addr) orelse return null;
         self.bytesAllocated += n;
         return out;
     }

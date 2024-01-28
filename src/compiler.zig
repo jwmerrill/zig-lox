@@ -733,7 +733,7 @@ pub const Parser = struct {
     }
 
     fn resolveLocal(self: *Parser, compiler: *Compiler, name: []const u8) !isize {
-        var locals = &compiler.locals;
+        const locals = &compiler.locals;
 
         var i: usize = 0;
         while (i < locals.items.len) : (i += 1) {
@@ -904,7 +904,7 @@ pub const Parser = struct {
         var getOp: OpCode = undefined;
         var setOp: OpCode = undefined;
         var arg: u8 = undefined;
-        var resolvedArg = try self.resolveLocal(self.compiler, name);
+        const resolvedArg = try self.resolveLocal(self.compiler, name);
 
         if (resolvedArg != -1) {
             arg = @as(u8, @intCast(resolvedArg));

@@ -59,7 +59,7 @@ pub const VM = struct {
     errWriter: VMWriter,
 
     pub fn create() VM {
-        var vm = VM{
+        const vm = VM{
             .gcAllocatorInstance = undefined,
             .allocator = undefined,
             .frames = undefined,
@@ -417,8 +417,8 @@ pub const VM = struct {
                     const lhsStr = lhs.asString();
                     const rhsStr = rhs.asString();
                     const buffer = try self.allocator.alloc(u8, lhsStr.bytes.len + rhsStr.bytes.len);
-                    std.mem.copy(u8, buffer[0..lhsStr.bytes.len], lhsStr.bytes);
-                    std.mem.copy(u8, buffer[lhsStr.bytes.len..], rhsStr.bytes);
+                    @memcpy(buffer[0..lhsStr.bytes.len], lhsStr.bytes);
+                    @memcpy(buffer[lhsStr.bytes.len..], rhsStr.bytes);
                     _ = self.pop();
                     _ = self.pop();
                     self.push((try Obj.String.create(self, buffer)).obj.value());
