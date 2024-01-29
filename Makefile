@@ -46,4 +46,4 @@ www-server: www
 	cd www && python3 -m http.server
 
 test: lox
-	zig run util/test.zig -- bin/lox $(TEST_FILES)
+	zig build test -- bin/lox $(TEST_FILES)
