@@ -4,7 +4,7 @@ const env = @import("./env.zig");
 
 fn clockNative(args: []const Value) Value {
     _ = args;
-    return Value.fromNumber(@intToFloat(f64, std.time.milliTimestamp()) / 1000);
+    return Value.fromNumber(@as(f64, @floatFromInt(std.time.milliTimestamp())) / 1000);
 }
 
 extern fn now() f64;
