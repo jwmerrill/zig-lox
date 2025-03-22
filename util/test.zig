@@ -29,7 +29,7 @@ pub fn main() !void {
 fn run_test(lox_path: []const u8, test_path: []const u8) !bool {
     std.debug.print("{s}\n", .{test_path});
     const argv = [_][]const u8{ lox_path, test_path };
-    const result = try std.ChildProcess.run(.{ .allocator = allocator, .argv = argv[0..] });
+    const result = try std.process.Child.run(.{ .allocator = allocator, .argv = argv[0..] });
     defer allocator.free(result.stdout);
     defer allocator.free(result.stderr);
 
