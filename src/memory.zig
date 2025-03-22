@@ -41,7 +41,7 @@ pub const GCAllocator = struct {
         if ((self.bytesAllocated + n > self.nextGC) or debug.STRESS_GC) {
             self.collectGarbage();
         }
-        var out = self.parent_allocator.rawAlloc(n, log2_ptr_align, ret_addr) orelse return null;
+        const out = self.parent_allocator.rawAlloc(n, log2_ptr_align, ret_addr) orelse return null;
         self.bytesAllocated += n;
         return out;
     }

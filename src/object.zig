@@ -83,35 +83,35 @@ pub const Obj = struct {
     }
 
     pub fn asString(self: *Obj) *String {
-        return @fieldParentPtr(String, "obj", self);
+        return @fieldParentPtr("obj", self);
     }
 
     pub fn asFunction(self: *Obj) *Function {
-        return @fieldParentPtr(Function, "obj", self);
+        return @fieldParentPtr("obj", self);
     }
 
     pub fn asNativeFunction(self: *Obj) *NativeFunction {
-        return @fieldParentPtr(NativeFunction, "obj", self);
+        return @fieldParentPtr("obj", self);
     }
 
     pub fn asClosure(self: *Obj) *Closure {
-        return @fieldParentPtr(Closure, "obj", self);
+        return @fieldParentPtr("obj", self);
     }
 
     pub fn asUpvalue(self: *Obj) *Upvalue {
-        return @fieldParentPtr(Upvalue, "obj", self);
+        return @alignCast(@fieldParentPtr("obj", self));
     }
 
     pub fn asClass(self: *Obj) *Class {
-        return @fieldParentPtr(Class, "obj", self);
+        return @fieldParentPtr("obj", self);
     }
 
     pub fn asInstance(self: *Obj) *Instance {
-        return @fieldParentPtr(Instance, "obj", self);
+        return @fieldParentPtr("obj", self);
     }
 
     pub fn asBoundMethod(self: *Obj) *BoundMethod {
-        return @fieldParentPtr(BoundMethod, "obj", self);
+        return @alignCast(@fieldParentPtr("obj", self));
     }
 
     pub fn value(self: *Obj) Value {
@@ -148,7 +148,7 @@ pub const Obj = struct {
 
         pub fn copy(vm: *VM, source: []const u8) !*String {
             const buffer = try vm.allocator.alloc(u8, source.len);
-            std.mem.copy(u8, buffer, source);
+            @memcpy(buffer, source);
             return String.create(vm, buffer);
         }
 
