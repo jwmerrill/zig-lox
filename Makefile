@@ -7,6 +7,8 @@ TEST_FILES=`find test -name "*.lox" \
 	| grep -v test/for/closure_in_body.lox \
 	`
 
+ZIG=zig
+
 all: lox
 
 .PHONY: clean
@@ -21,21 +23,25 @@ clean:
 
 .PHONY: lox
 lox:
-	zig build --prefix '.'
+	$(ZIG) build --prefix '.'
 
 .PHONY: release
 release:
-	zig build --prefix '.' -Doptimize=ReleaseFast
+	$(ZIG) build --prefix '.' -Doptimize=ReleaseFast
 
 .PHONY: wasi
 wasi: directories
 	cd build && \
-	zig build-exe ../src/main.zig -target wasm32-wasi --name lox-repl -O ReleaseSmall
+	$(ZIG) build-exe ../src/main.zig -target wasm32-wasi --name lox-repl -O ReleaseSmall
 
 .PHONY: wasm
 wasm: directories
 	cd build && \
-	zig build-lib ../src/wasm-lib.zig -target wasm32-freestanding -dynamic -rdynamic -O ReleaseSmall
+	$(ZIG) build-exe ../src/wasm-lib.zig \
+		-target wasm32-freestanding \
+		-fno-entry \
+		-rdynamic \
+		-O ReleaseSmall
 
 .PHONY: www
 www: wasm
@@ -46,4 +52,8 @@ www-server: www
 	cd www && python3 -m http.server
 
 test: lox
-	zig run util/test.zig -- bin/lox $(TEST_FILES)
+	$(ZIG) run util/test.zig -- bin/lox $(TEST_FILES)
+
+.PHONY: version
+version:
+	$(ZIG) version

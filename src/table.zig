@@ -78,7 +78,7 @@ pub const Table = struct {
 
     pub fn increaseCapacity(self: *Table) !void {
         const newCapacity = if (self.entries.len < 8) 8 else self.entries.len * 2;
-        var entries = try self.allocator.alloc(Entry, newCapacity);
+        const entries = try self.allocator.alloc(Entry, newCapacity);
 
         // Initialize new entries to empty values
         for (entries) |*entry| {
