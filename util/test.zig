@@ -78,7 +78,7 @@ const Expected = struct {
 };
 
 fn matches(source: []const u8, needle: []const u8) bool {
-    return std.mem.eql(u8, source[0..std.math.min(needle.len, source.len)], needle);
+    return std.mem.eql(u8, source[0..@min(needle.len, source.len)], needle);
 }
 
 fn parse_test_file(test_path: []const u8) !Expected {
@@ -142,9 +142,9 @@ fn parse_test_file(test_path: []const u8) !Expected {
     }
 
     return Expected{
-        .output = output_buffer.toOwnedSlice(),
-        .runtime_error_message = runtime_error_buffer.toOwnedSlice(),
-        .compile_error_message = compile_error_buffer.toOwnedSlice(),
+        .output = try output_buffer.toOwnedSlice(),
+        .runtime_error_message = try runtime_error_buffer.toOwnedSlice(),
+        .compile_error_message = try compile_error_buffer.toOwnedSlice(),
         .exit_code = exit_code,
     };
 }

@@ -25,7 +25,7 @@ lox:
 
 .PHONY: release
 release:
-	zig build --prefix '.' -Drelease-fast=true
+	zig build --prefix '.' -Doptimize=ReleaseFast
 
 .PHONY: wasi
 wasi: directories
@@ -35,7 +35,7 @@ wasi: directories
 .PHONY: wasm
 wasm: directories
 	cd build && \
-	zig build-lib ../src/wasm-lib.zig -target wasm32-freestanding -dynamic -O ReleaseSmall
+	zig build-lib ../src/wasm-lib.zig -target wasm32-freestanding -dynamic -rdynamic -O ReleaseSmall
 
 .PHONY: www
 www: wasm
