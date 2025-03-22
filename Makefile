@@ -25,7 +25,7 @@ lox:
 
 .PHONY: release
 release:
-	zig build --prefix '.' -Drelease-fast=true
+	zig build --prefix '.' -Doptimize=ReleaseFast
 
 .PHONY: wasi
 wasi: directories
