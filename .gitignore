@@ -1,4 +1,6 @@
 /zig-cache
+.zig-cache
+.zigversion
 /src/zig-cache
 /bin
 /build
