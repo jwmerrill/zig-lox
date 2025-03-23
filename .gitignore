@@ -5,5 +5,5 @@
 /bin
 /build
 /www/build
-
+.vscode
 wapm_packages
