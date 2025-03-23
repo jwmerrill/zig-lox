@@ -31,22 +31,23 @@ pub const GCAllocator = struct {
             .vtable = &.{
                 .alloc = alloc,
                 .resize = resize,
+                .remap = remap,
                 .free = free,
             },
         };
     }
 
-    fn alloc(ctx: *anyopaque, n: usize, log2_ptr_align: u8, ret_addr: usize) ?[*]u8 {
+    fn alloc(ctx: *anyopaque, n: usize, alignment: std.mem.Alignment, ret_addr: usize) ?[*]u8 {
         const self: *Self = @ptrCast(@alignCast(ctx));
         if ((self.bytesAllocated + n > self.nextGC) or debug.STRESS_GC) {
             self.collectGarbage();
         }
-        const out = self.parent_allocator.rawAlloc(n, log2_ptr_align, ret_addr) orelse return null;
+        const out = self.parent_allocator.rawAlloc(n, alignment, ret_addr) orelse return null;
         self.bytesAllocated += n;
         return out;
     }
 
-    pub fn resize(ctx: *anyopaque, buf: []u8, log2_buf_align: u8, new_len: usize, ret_addr: usize) bool {
+    pub fn resize(ctx: *anyopaque, buf: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) bool {
         const self: *Self = @ptrCast(@alignCast(ctx));
         if (new_len > buf.len) {
             if ((self.bytesAllocated + (new_len - buf.len) > self.nextGC) or debug.STRESS_GC) {
@@ -54,7 +55,7 @@ pub const GCAllocator = struct {
             }
         }
 
-        if (self.parent_allocator.rawResize(buf, log2_buf_align, new_len, ret_addr)) {
+        if (self.parent_allocator.rawResize(buf, alignment, new_len, ret_addr)) {
             if (new_len > buf.len) {
                 self.bytesAllocated += new_len - buf.len;
             } else {
@@ -66,9 +67,30 @@ pub const GCAllocator = struct {
         }
     }
 
-    pub fn free(ctx: *anyopaque, buf: []u8, log2_buf_align: u8, ret_addr: usize) void {
+    pub fn remap(ctx: *anyopaque, buf: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
         const self: *Self = @ptrCast(@alignCast(ctx));
-        self.parent_allocator.rawFree(buf, log2_buf_align, ret_addr);
+        if (new_len > buf.len) {
+            if ((self.bytesAllocated + (new_len - buf.len) > self.nextGC) or debug.STRESS_GC) {
+                self.collectGarbage();
+            }
+        }
+
+        const out = self.parent_allocator.rawRemap(buf, alignment, new_len, ret_addr);
+
+        if (out != null) {
+            if (new_len > buf.len) {
+                self.bytesAllocated += new_len - buf.len;
+            } else {
+                self.bytesAllocated -= buf.len - new_len;
+            }
+        }
+
+        return out;
+    }
+
+    pub fn free(ctx: *anyopaque, buf: []u8, alignment: std.mem.Alignment, ret_addr: usize) void {
+        const self: *Self = @ptrCast(@alignCast(ctx));
+        self.parent_allocator.rawFree(buf, alignment, ret_addr);
         self.bytesAllocated -= buf.len;
     }
 

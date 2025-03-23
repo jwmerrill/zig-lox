@@ -161,7 +161,7 @@ pub const VM = struct {
         switch (opCode) {
             .Return => {
                 const result = self.pop();
-                const frame = self.frames.pop();
+                const frame = self.frames.pop() orelse unreachable;
 
                 self.closeUpvalues(&self.stack.items[frame.start]);
 
@@ -612,13 +612,12 @@ pub const VM = struct {
     }
 
     fn runtimeError(self: *VM, comptime message: []const u8, args: anytype) !void {
-        @setCold(true);
+        @branchHint(.cold);
 
         try self.errWriter.print(message, args);
         try self.errWriter.print("\n", .{});
 
-        while (self.frames.items.len > 0) {
-            const frame = self.frames.pop();
+        while (self.frames.pop()) |frame| {
             const function = frame.closure.function;
             const line = function.chunk.lines.items[frame.ip - 1];
             const name = if (function.name) |str| str.bytes else "<script>";

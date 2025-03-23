@@ -13,14 +13,14 @@ pub fn main() !void {
     const allocator = init: {
         if (comptime debug.TESTING_ALLOCATOR) {
             break :init std.testing.allocator;
-        } else if (comptime builtin.target.isWasm()) {
+        } else if (comptime std.Target.Cpu.Arch.isWasm(builtin.target.cpu.arch)) {
             break :init general_purpose_allocator.allocator();
         } else {
             break :init std.heap.c_allocator;
         }
     };
 
-    if (comptime builtin.target.isWasm()) {
+    if (comptime std.Target.Cpu.Arch.isWasm(builtin.target.cpu.arch)) {
         try repl(allocator);
     } else {
         const args = try process.argsAlloc(allocator);
