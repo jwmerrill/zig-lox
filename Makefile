@@ -54,6 +54,6 @@ www-server: www
 test: lox
 	$(ZIG) run util/test.zig -- bin/lox $(TEST_FILES)
 
-.PHONY: version
-version:
+.PHONY: zig-version
+zig-version:
 	$(ZIG) version
