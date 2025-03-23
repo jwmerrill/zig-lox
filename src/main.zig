@@ -8,15 +8,18 @@ const VM = @import("./vm.zig").VM;
 const debug = @import("./debug.zig");
 
 pub fn main() !void {
-    var general_purpose_allocator = std.heap.GeneralPurposeAllocator(.{}){};
+    var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
 
     const allocator = init: {
         if (comptime debug.TESTING_ALLOCATOR) {
             break :init std.testing.allocator;
         } else if (comptime std.Target.Cpu.Arch.isWasm(builtin.target.cpu.arch)) {
-            break :init general_purpose_allocator.allocator();
+            break :init debug_allocator.allocator();
         } else {
-            break :init std.heap.c_allocator;
+            break :init switch (builtin.mode) {
+                .Debug, .ReleaseSafe => debug_allocator.allocator(),
+                .ReleaseFast, .ReleaseSmall => std.heap.smp_allocator,
+            };
         }
     };
 
