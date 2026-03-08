@@ -49,6 +49,19 @@ Skipped tests:
 - `test/for/closure_in_body.lox` — zig-lox handles loop variable closure differently than clox
 - `test/benchmark/string_equality.lox` — hits constant pool limit
 
+## Allocator Conventions
+
+Zig allocator choice matters — see https://ziglang.org/documentation/0.14.0/#Choosing-an-Allocator for background.
+
+**Backing allocator** (selected in `main.zig`): `DebugAllocator` in Debug/ReleaseSafe, `smp_allocator` in ReleaseFast/ReleaseSmall, `GeneralPurposeAllocator` in WASM. The VM wraps whatever backing allocator it receives in `GCAllocator` (`memory.zig`), which intercepts allocations to trigger mark-and-sweep GC.
+
+**Key rules:**
+- All runtime object allocations must go through `vm.allocator` (the GCAllocator) so the GC can track heap usage
+- The VM stack uses the backing allocator directly (not GCAllocator) because upvalue `*Value` pointers prevent dynamic stack resizing
+- Test/benchmark utilities (`util/test.zig`, `util/benchmark.zig`) use `ArenaAllocator` backed by `page_allocator` — appropriate since they spawn child processes and need simple bulk-free semantics, not general-purpose allocation
+- When writing standalone utilities (test harnesses, benchmarks, build scripts), prefer `ArenaAllocator` over `GeneralPurposeAllocator` when all memory can be freed at once or in phases. Use `page_allocator` as the backing allocator for arenas in these contexts
+- `GeneralPurposeAllocator` is for long-lived processes needing individual free/realloc (like the WASM host interface). Don't use it where an arena suffices
+
 ## Notable Design Decisions
 
 - **NaN-boxing** enabled by default: values packed into 64-bit doubles
