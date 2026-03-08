@@ -1,11 +1,10 @@
 const std = @import("std");
-const io = std.io;
 const process = std.process;
 const Allocator = std.mem.Allocator;
 
 const Chunk = @import("./chunk.zig").Chunk;
 const VM = @import("./vm.zig").VM;
-const ExternalWriter = @import("./writer.zig").ExternalWriter;
+const WasmWriter = @import("./writer.zig").WasmWriter;
 
 var general_purpose_allocator = std.heap.GeneralPurposeAllocator(.{}){};
 const allocator = general_purpose_allocator.allocator();
@@ -23,16 +22,14 @@ fn writeErrSlice(bytes: []const u8) void {
 }
 
 fn createVMPtr() !*VM {
-    // Note, important that outWriter holds ExternalWriter instance by
-    // value, and not by reference, since a reference to the external
-    // writer would be invalidated when this function exits. That
-    // mistake caught me out earlier.
-    const outWriter = ExternalWriter.init(writeOutSlice).writer();
-    const errWriter = ExternalWriter.init(writeErrSlice).writer();
+    var outWasmWriter = try allocator.create(WasmWriter);
+    outWasmWriter.* = WasmWriter.init(writeOutSlice);
+    var errWasmWriter = try allocator.create(WasmWriter);
+    errWasmWriter.* = WasmWriter.init(writeErrSlice);
 
     var vm = try allocator.create(VM);
     vm.* = VM.create();
-    try vm.init(allocator, outWriter, errWriter);
+    try vm.init(allocator, outWasmWriter.writer(), errWasmWriter.writer());
     return vm;
 }
 

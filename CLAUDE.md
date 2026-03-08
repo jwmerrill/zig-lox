@@ -14,7 +14,7 @@ make wasi         # WASI build → build/lox-repl.wasm
 make www-server   # Build WASM and serve web REPL on localhost:8000
 ```
 
-Requires Zig 0.14. The `ZIG` variable in the Makefile can override the zig binary path.
+Requires Zig 0.15. The `ZIG` variable in the Makefile can override the zig binary path.
 
 ## Architecture
 
@@ -31,6 +31,7 @@ Key source files in `src/`:
 - **object.zig** — Runtime heap objects (String, Function, Closure, Upvalue, Class, Instance, BoundMethod). Uses struct-inheritance pattern with `@fieldParentPtr`
 - **memory.zig** — GCAllocator wrapping a backing allocator. Mark-and-sweep GC with intrusive gray list. Threshold starts at 1MB, doubles each cycle
 - **table.zig** — String-keyed hash table (not generic) for globals and object fields
+- **writer.zig** — VMWriter type (`*std.Io.Writer`) and WasmWriter (custom `std.Io.Writer` VTable for WASM host I/O)
 - **wasm-lib.zig** — WASM entry point exporting createVM/destroyVM/interpret/run. Imports writeOut/writeErr/now from host
 
 ## Debug Flags
@@ -51,7 +52,7 @@ Skipped tests:
 
 ## Allocator Conventions
 
-Zig allocator choice matters — see https://ziglang.org/documentation/0.14.0/#Choosing-an-Allocator for background.
+Zig allocator choice matters — see https://ziglang.org/documentation/0.15.0/#Choosing-an-Allocator for background.
 
 **Backing allocator** (selected in `main.zig`): `DebugAllocator` in Debug/ReleaseSafe, `smp_allocator` in ReleaseFast/ReleaseSmall, `GeneralPurposeAllocator` in WASM. The VM wraps whatever backing allocator it receives in `GCAllocator` (`memory.zig`), which intercepts allocations to trigger mark-and-sweep GC.
 
