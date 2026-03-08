@@ -104,14 +104,6 @@ pub const Table = struct {
         self.entries = entries;
     }
 
-    pub fn copyTo(self: *Table, dest: *Table) !void {
-        for (self.entries) |entry| {
-            if (entry.key) |key| {
-                dest.set(key, entry.value);
-            }
-        }
-    }
-
     fn findEntry(entries: []Entry, key: *Obj.String) *Entry {
         var index = key.hash & (entries.len - 1);
         var maybeTombstone: ?*Entry = null;
