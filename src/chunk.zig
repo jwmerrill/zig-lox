@@ -1,5 +1,5 @@
 const std = @import("std");
-const ArrayList = std.ArrayList;
+const ArrayListUnmanaged = std.ArrayListUnmanaged;
 const Allocator = std.mem.Allocator;
 const Value = @import("./value.zig").Value;
 
@@ -44,27 +44,29 @@ pub const OpCode = enum(u8) {
 };
 
 pub const Chunk = struct {
-    code: ArrayList(u8),
-    constants: ArrayList(Value),
-    lines: ArrayList(usize),
+    allocator: Allocator,
+    code: ArrayListUnmanaged(u8),
+    constants: ArrayListUnmanaged(Value),
+    lines: ArrayListUnmanaged(usize),
 
     pub fn init(allocator: Allocator) Chunk {
         return Chunk{
-            .code = ArrayList(u8).init(allocator),
-            .constants = ArrayList(Value).init(allocator),
-            .lines = ArrayList(usize).init(allocator),
+            .allocator = allocator,
+            .code = .{},
+            .constants = .{},
+            .lines = .{},
         };
     }
 
     pub fn deinit(self: *Chunk) void {
-        self.code.deinit();
-        self.constants.deinit();
-        self.lines.deinit();
+        self.code.deinit(self.allocator);
+        self.constants.deinit(self.allocator);
+        self.lines.deinit(self.allocator);
     }
 
     pub fn write(self: *Chunk, byte: u8, line: usize) !void {
-        try self.code.append(byte);
-        try self.lines.append(line);
+        try self.code.append(self.allocator, byte);
+        try self.lines.append(self.allocator, line);
     }
 
     pub fn writeOp(self: *Chunk, op: OpCode, line: usize) !void {
@@ -73,7 +75,7 @@ pub const Chunk = struct {
 
     pub fn addConstant(self: *Chunk, value: Value) !u9 {
         const index = @as(u9, @intCast(self.constants.items.len));
-        try self.constants.append(value);
+        try self.constants.append(self.allocator, value);
         return index;
     }
 
