@@ -25,6 +25,7 @@ clean:
 	rm -rf src/zig-cache
 
 .PHONY: directories
+directories:
 	mkdir -p build
 
 .PHONY: lox
@@ -63,7 +64,7 @@ test: lox
 .PHONY: zig-version
 zig-version:
 	$(ZIG) version
-	zig run util/test.zig -- bin/lox $(TEST_FILES)
+	$(ZIG) run util/test.zig -- bin/lox $(TEST_FILES)
 
 benchmark: release
-	zig run util/benchmark.zig -- bin/lox $(BENCHMARK_FILES)
+	$(ZIG) run util/benchmark.zig -- bin/lox $(BENCHMARK_FILES)

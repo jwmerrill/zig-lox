@@ -1,24 +1,21 @@
 const std = @import("std");
 const process = std.process;
 
-const allocator = std.heap.c_allocator;
-
 pub fn main() !void {
-    {
-        const args = try process.argsAlloc(allocator);
-        defer process.argsFree(allocator, args);
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    const allocator = arena.allocator();
 
-        const lox_path = args[1];
+    const args = try process.argsAlloc(allocator);
+    const lox_path = args[1];
 
-        for (args[2..]) |test_path| {
-            try run_benchmark(lox_path, test_path);
-        }
+    for (args[2..]) |test_path| {
+        try run_benchmark(allocator, lox_path, test_path);
     }
 
     process.exit(0);
 }
 
-fn run_benchmark(lox_path: []const u8, test_path: []const u8) !void {
+fn run_benchmark(allocator: std.mem.Allocator, lox_path: []const u8, test_path: []const u8) !void {
     std.debug.print("{s}\n", .{test_path});
     const argv = [_][]const u8{ lox_path, test_path };
     var min: i64 = std.math.maxInt(i64);

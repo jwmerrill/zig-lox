@@ -1,24 +1,22 @@
 const std = @import("std");
 const process = std.process;
 
-const allocator = std.heap.c_allocator;
-
 pub fn main() !void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    const allocator = arena.allocator();
     var npassed: usize = 0;
     var nfailed: usize = 0;
 
-    {
-        const args = try process.argsAlloc(allocator);
-        defer process.argsFree(allocator, args);
+    const args = try process.argsAlloc(allocator);
+    const lox_path = args[1];
 
-        const lox_path = args[1];
-
-        for (args[2..]) |test_path| {
-            if (try run_test(lox_path, test_path)) {
-                npassed += 1;
-            } else {
-                nfailed += 1;
-            }
+    for (args[2..]) |test_path| {
+        var test_arena = std.heap.ArenaAllocator.init(allocator);
+        defer test_arena.deinit();
+        if (try run_test(test_arena.allocator(), lox_path, test_path)) {
+            npassed += 1;
+        } else {
+            nfailed += 1;
         }
     }
 
@@ -26,17 +24,12 @@ pub fn main() !void {
     process.exit(if (nfailed > 0) 1 else 0);
 }
 
-fn run_test(lox_path: []const u8, test_path: []const u8) !bool {
+fn run_test(allocator: std.mem.Allocator, lox_path: []const u8, test_path: []const u8) !bool {
     std.debug.print("{s}\n", .{test_path});
     const argv = [_][]const u8{ lox_path, test_path };
     const result = try std.process.Child.run(.{ .allocator = allocator, .argv = argv[0..] });
-    defer allocator.free(result.stdout);
-    defer allocator.free(result.stderr);
 
-    const expected = try parse_test_file(test_path);
-    defer allocator.free(expected.output);
-    defer allocator.free(expected.runtime_error_message);
-    defer allocator.free(expected.compile_error_message);
+    const expected = try parse_test_file(allocator, test_path);
 
     return (validate_compile_error(result.stderr, expected.compile_error_message) and
         validate_runtime_error(result.stderr, expected.runtime_error_message) and
@@ -81,7 +74,7 @@ fn matches(source: []const u8, needle: []const u8) bool {
     return std.mem.eql(u8, source[0..@min(needle.len, source.len)], needle);
 }
 
-fn parse_test_file(test_path: []const u8) !Expected {
+fn parse_test_file(allocator: std.mem.Allocator, test_path: []const u8) !Expected {
     const source = try std.fs.cwd().readFileAlloc(allocator, test_path, 1_000_000);
 
     var output_buffer = std.ArrayList(u8).init(allocator);
