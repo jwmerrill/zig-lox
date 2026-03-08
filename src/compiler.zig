@@ -44,17 +44,18 @@ pub const Compiler = struct {
     enclosing: ?*Compiler,
     function: *Obj.Function,
     functionType: FunctionType,
-    locals: std.ArrayList(Local),
-    upvalues: std.ArrayList(Upvalue),
+    locals: std.ArrayListUnmanaged(Local),
+    upvalues: std.ArrayListUnmanaged(Upvalue),
     scopeDepth: usize,
+    allocator: Allocator,
 
     pub fn init(vm: *VM, functionType: FunctionType, enclosing: ?*Compiler) !Compiler {
-        var locals = std.ArrayList(Local).init(vm.allocator);
+        var locals: std.ArrayListUnmanaged(Local) = .{};
 
         // First local is reserved to represent the current function
         // value on the stack. Give it a name of "" to make sure it
         // can't actually be referenced by local variables.
-        try locals.append(Local{
+        try locals.append(vm.allocator, Local{
             .depth = 0,
             .isCaptured = false,
             .name = if (functionType == .Function) "" else "this",
@@ -68,14 +69,15 @@ pub const Compiler = struct {
             .function = try Obj.Function.create(vm),
             .functionType = functionType,
             .locals = locals,
-            .upvalues = std.ArrayList(Upvalue).init(vm.allocator),
+            .upvalues = .{},
             .scopeDepth = 0,
+            .allocator = vm.allocator,
         };
     }
 
     pub fn deinit(self: *Compiler) void {
-        self.locals.deinit();
-        self.upvalues.deinit();
+        self.locals.deinit(self.allocator);
+        self.upvalues.deinit(self.allocator);
     }
 };
 
@@ -723,7 +725,7 @@ pub const Parser = struct {
             return 0;
         }
 
-        try compiler.upvalues.append(Upvalue{
+        try compiler.upvalues.append(compiler.allocator, Upvalue{
             .isLocal = isLocal,
             .index = index,
         });
@@ -779,7 +781,7 @@ pub const Parser = struct {
             .depth = -1,
             .isCaptured = false,
         };
-        try self.compiler.locals.append(local);
+        try self.compiler.locals.append(self.compiler.allocator, local);
     }
 
     fn prefix(self: *Parser, tokenType: TokenType, canAssign: bool) !void {

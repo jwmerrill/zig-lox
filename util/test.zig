@@ -77,9 +77,9 @@ fn matches(source: []const u8, needle: []const u8) bool {
 fn parse_test_file(allocator: std.mem.Allocator, test_path: []const u8) !Expected {
     const source = try std.fs.cwd().readFileAlloc(allocator, test_path, 1_000_000);
 
-    var output_buffer = std.ArrayList(u8).init(allocator);
-    var compile_error_buffer = std.ArrayList(u8).init(allocator);
-    var runtime_error_buffer = std.ArrayList(u8).init(allocator);
+    var output_buffer: std.ArrayListUnmanaged(u8) = .{};
+    var compile_error_buffer: std.ArrayListUnmanaged(u8) = .{};
+    var runtime_error_buffer: std.ArrayListUnmanaged(u8) = .{};
 
     const expect_prefix = "// expect: ";
     const error_prefix = "// Error";
@@ -94,40 +94,40 @@ fn parse_test_file(allocator: std.mem.Allocator, test_path: []const u8) !Expecte
         if (matches(source[i..], expect_prefix)) {
             i += expect_prefix.len;
             const j = std.mem.indexOfScalarPos(u8, source, i, '\n') orelse source.len;
-            try output_buffer.appendSlice(source[i..j]);
-            try output_buffer.append('\n');
+            try output_buffer.appendSlice(allocator, source[i..j]);
+            try output_buffer.append(allocator, '\n');
             i = j;
         } else if (matches(source[i..], error_prefix)) {
             exit_code = 65;
             i += error_prefix.len;
             const j = std.mem.indexOfScalarPos(u8, source, i, '\n') orelse source.len;
-            try compile_error_buffer.writer().print("[line {}] Error", .{line});
-            try compile_error_buffer.appendSlice(source[i..j]);
-            try compile_error_buffer.append('\n');
+            try compile_error_buffer.writer(allocator).print("[line {}] Error", .{line});
+            try compile_error_buffer.appendSlice(allocator, source[i..j]);
+            try compile_error_buffer.append(allocator, '\n');
             i = j;
         } else if (matches(source[i..], line_error_prefix)) {
             exit_code = 65;
             i += line_error_prefix.len;
             const j = std.mem.indexOfScalarPos(u8, source, i, '\n') orelse source.len;
-            try compile_error_buffer.appendSlice("[line ");
-            try compile_error_buffer.appendSlice(source[i..j]);
-            try compile_error_buffer.append('\n');
+            try compile_error_buffer.appendSlice(allocator, "[line ");
+            try compile_error_buffer.appendSlice(allocator, source[i..j]);
+            try compile_error_buffer.append(allocator, '\n');
             i = j;
         } else if (matches(source[i..], c_line_error_prefix)) {
             exit_code = 65;
             i += c_line_error_prefix.len;
             const j = std.mem.indexOfScalarPos(u8, source, i, '\n') orelse source.len;
-            try compile_error_buffer.appendSlice("[line ");
-            try compile_error_buffer.appendSlice(source[i..j]);
-            try compile_error_buffer.append('\n');
+            try compile_error_buffer.appendSlice(allocator, "[line ");
+            try compile_error_buffer.appendSlice(allocator, source[i..j]);
+            try compile_error_buffer.append(allocator, '\n');
             i = j;
         } else if (matches(source[i..], runtime_error_prefix)) {
             exit_code = 70;
             i += runtime_error_prefix.len;
             const j = std.mem.indexOfScalarPos(u8, source, i, '\n') orelse source.len;
-            try runtime_error_buffer.appendSlice(source[i..j]);
+            try runtime_error_buffer.appendSlice(allocator, source[i..j]);
             // Append start of stack trace to runtime error message
-            try runtime_error_buffer.writer().print("\n[line {}]", .{line});
+            try runtime_error_buffer.writer(allocator).print("\n[line {}]", .{line});
             i = j;
         }
 
@@ -135,9 +135,9 @@ fn parse_test_file(allocator: std.mem.Allocator, test_path: []const u8) !Expecte
     }
 
     return Expected{
-        .output = try output_buffer.toOwnedSlice(),
-        .runtime_error_message = try runtime_error_buffer.toOwnedSlice(),
-        .compile_error_message = try compile_error_buffer.toOwnedSlice(),
+        .output = try output_buffer.toOwnedSlice(allocator),
+        .runtime_error_message = try runtime_error_buffer.toOwnedSlice(allocator),
+        .compile_error_message = try compile_error_buffer.toOwnedSlice(allocator),
         .exit_code = exit_code,
     };
 }
