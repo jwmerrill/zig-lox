@@ -115,7 +115,7 @@ const Precedence = enum(u8) {
 // trouble inferring error sets for recursive functions.
 //
 // See https://github.com/ziglang/zig/issues/2971
-const CompilerErrors = error{OutOfMemory} || std.posix.WriteError;
+const CompilerErrors = error{ OutOfMemory, WriteFailed };
 
 fn getPrecedence(tokenType: TokenType) Precedence {
     return switch (tokenType) {
@@ -219,7 +219,7 @@ pub const Parser = struct {
         if (self.panicMode) return;
         self.panicMode = true;
 
-        try self.vm.errWriter.print("[line {}] Error", .{token.line});
+        try self.vm.errWriter.print("[line {d}] Error", .{token.line});
 
         switch (token.tokenType) {
             .Eof => {
@@ -232,6 +232,7 @@ pub const Parser = struct {
         }
 
         try self.vm.errWriter.print(": {s}\n", .{message});
+        try self.vm.errWriter.flush();
 
         self.hadError = true;
     }

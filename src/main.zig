@@ -1,8 +1,8 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const io = std.io;
 const process = std.process;
 const Allocator = std.mem.Allocator;
+const File = std.fs.File;
 
 const VM = @import("./vm.zig").VM;
 const debug = @import("./debug.zig");
@@ -33,8 +33,10 @@ pub fn main() !void {
             1 => try repl(allocator),
             2 => try runFile(allocator, args[1]),
             else => {
-                const stderr = io.getStdErr().writer();
-                try stderr.print("Usage: lox [path]\n", .{});
+                var buf: [4096]u8 = undefined;
+                var stderr_w = File.stderr().writerStreaming(&buf);
+                try stderr_w.interface.print("Usage: lox [path]\n", .{});
+                try stderr_w.interface.flush();
                 process.exit(64);
             },
         }
@@ -42,19 +44,27 @@ pub fn main() !void {
 }
 
 fn repl(allocator: Allocator) !void {
-    const stderr = io.getStdErr().writer();
-    const stdin = io.getStdIn();
+    var stderr_buf: [4096]u8 = undefined;
+    var stderr_w = File.stderr().writerStreaming(&stderr_buf);
+    const stdin = File.stdin();
+
+    var out_buf: [4096]u8 = undefined;
+    var out_writer = File.stdout().writerStreaming(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_writer = File.stderr().writerStreaming(&err_buf);
 
     var vm = VM.create();
-    try vm.init(allocator, std.io.getStdOut().writer(), std.io.getStdErr().writer());
+    try vm.init(allocator, &out_writer.interface, &err_writer.interface);
     defer vm.deinit();
 
     var sourceBuf: [256]u8 = undefined;
     while (true) {
-        try stderr.print("> ", .{});
+        try stderr_w.interface.print("> ", .{});
+        try stderr_w.interface.flush();
         const amt = try stdin.read(&sourceBuf);
         if (amt == sourceBuf.len) {
-            try stderr.print("Input too long.\n", .{});
+            try stderr_w.interface.print("Input too long.\n", .{});
+            try stderr_w.interface.flush();
             continue;
         }
         const source = sourceBuf[0..amt];
@@ -66,8 +76,13 @@ fn repl(allocator: Allocator) !void {
 }
 
 fn runFile(allocator: Allocator, path: []const u8) !void {
+    var out_buf: [4096]u8 = undefined;
+    var out_writer = File.stdout().writerStreaming(&out_buf);
+    var err_buf: [4096]u8 = undefined;
+    var err_writer = File.stderr().writerStreaming(&err_buf);
+
     var vm = VM.create();
-    try vm.init(allocator, std.io.getStdOut().writer(), std.io.getStdErr().writer());
+    try vm.init(allocator, &out_writer.interface, &err_writer.interface);
     defer vm.deinit();
 
     const source = try std.fs.cwd().readFileAlloc(allocator, path, 1_000_000);

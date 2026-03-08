@@ -12,6 +12,7 @@ const Table = @import("./table.zig").Table;
 const FixedCapacityStack = @import("./stack.zig").FixedCapacityStack;
 const GCAllocator = @import("./memory.zig").GCAllocator;
 const VMWriter = @import("./writer.zig").VMWriter;
+const Writer = std.Io.Writer;
 const clock = @import("./native.zig").clock;
 
 fn add(x: f64, y: f64) f64 {
@@ -285,7 +286,8 @@ pub const VM = struct {
                 try self.defineMethod(self.readString());
             },
             .Print => {
-                try self.outWriter.print("{}\n", .{self.pop()});
+                try self.outWriter.print("{f}\n", .{self.pop()});
+                try self.outWriter.flush();
             },
             .Jump => {
                 const offset = self.readShort();
@@ -606,7 +608,7 @@ pub const VM = struct {
     fn printStack(self: *VM) !void {
         std.debug.print("          ", .{});
         for (self.stack.items) |value| {
-            std.debug.print("[ {} ]", .{value});
+            std.debug.print("[ {f} ]", .{value});
         }
         std.debug.print("\n", .{});
     }
@@ -621,9 +623,10 @@ pub const VM = struct {
             const function = frame.closure.function;
             const line = function.chunk.lines.items[frame.ip - 1];
             const name = if (function.name) |str| str.bytes else "<script>";
-            try self.errWriter.print("[line {}] in {s}\n", .{ line, name });
+            try self.errWriter.print("[line {d}] in {s}\n", .{ line, name });
         }
 
+        try self.errWriter.flush();
         return error.RuntimeError;
     }
 

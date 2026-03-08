@@ -1,6 +1,7 @@
 const std = @import("std");
 const Obj = @import("./object.zig").Obj;
 const NAN_BOXING = @import("./debug.zig").NAN_BOXING;
+const Writer = std.Io.Writer;
 
 pub const Value = if (NAN_BOXING) NanBoxedValue else UnionValue;
 
@@ -77,18 +78,16 @@ pub const NanBoxedValue = packed struct {
         return self.data == other.data;
     }
 
-    pub fn format(self: NanBoxedValue, comptime fmt: []const u8, options: std.fmt.FormatOptions, out_stream: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(self: NanBoxedValue, w: *Writer) Writer.Error!void {
         if (self.isNumber()) {
-            try out_stream.print("{d}", .{self.asNumber()});
+            try w.print("{d}", .{self.asNumber()});
         } else if (self.isBool()) {
-            try out_stream.print("{}", .{self.asBool()});
+            try w.print("{}", .{self.asBool()});
         } else if (self.isNil()) {
-            try out_stream.print("nil", .{});
+            try w.print("nil", .{});
         } else {
             const obj = self.asObj();
-            try printObject(obj, out_stream);
+            try printObject(obj, w);
         }
     }
 };
@@ -184,45 +183,43 @@ pub const UnionValue = union(enum) {
         };
     }
 
-    pub fn format(self: UnionValue, comptime fmt: []const u8, options: std.fmt.FormatOptions, out_stream: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(self: UnionValue, w: *Writer) Writer.Error!void {
         switch (self) {
-            .Number => |value| try out_stream.print("{d}", .{value}),
-            .Bool => |value| try out_stream.print("{}", .{value}),
-            .Nil => try out_stream.print("nil", .{}),
-            .Obj => |obj| try printObject(obj, out_stream),
+            .Number => |value| try w.print("{d}", .{value}),
+            .Bool => |value| try w.print("{}", .{value}),
+            .Nil => try w.print("nil", .{}),
+            .Obj => |obj| try printObject(obj, w),
         }
     }
 };
 
 // Shared between the two value representations
-fn printObject(obj: *Obj, out_stream: anytype) !void {
+fn printObject(obj: *Obj, w: *Writer) Writer.Error!void {
     switch (obj.objType) {
-        .String => try out_stream.print("{s}", .{obj.asString().bytes}),
+        .String => try w.print("{s}", .{obj.asString().bytes}),
         .Function => {
             const name = if (obj.asFunction().name) |str| str.bytes else "<script>";
-            try out_stream.print("<fn {s}>", .{name});
+            try w.print("<fn {s}>", .{name});
         },
         .NativeFunction => {
-            try out_stream.print("<native fn>", .{});
+            try w.print("<native fn>", .{});
         },
         .Closure => {
             const name = if (obj.asClosure().function.name) |str| str.bytes else "<script>";
-            try out_stream.print("<fn {s}>", .{name});
+            try w.print("<fn {s}>", .{name});
         },
         .Upvalue => {
-            try out_stream.print("upvalue", .{});
+            try w.print("upvalue", .{});
         },
         .Class => {
-            try out_stream.print("{s}", .{obj.asClass().name.bytes});
+            try w.print("{s}", .{obj.asClass().name.bytes});
         },
         .Instance => {
-            try out_stream.print("{s} instance", .{obj.asInstance().class.name.bytes});
+            try w.print("{s} instance", .{obj.asInstance().class.name.bytes});
         },
         .BoundMethod => {
             const name = if (obj.asBoundMethod().method.function.name) |str| str.bytes else "<script>";
-            try out_stream.print("<fn {s}>", .{name});
+            try w.print("<fn {s}>", .{name});
         },
     }
 }

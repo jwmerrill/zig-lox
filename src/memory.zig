@@ -173,7 +173,7 @@ pub const GCAllocator = struct {
 
     fn blackenObject(self: *Self, obj: *Obj) void {
         if (debug.LOG_GC) {
-            std.debug.print("{} blacken {}\n", .{ @intFromPtr(obj), obj.value() });
+            std.debug.print("{} blacken {f}\n", .{ @intFromPtr(obj), obj.value() });
         }
 
         switch (obj.objType) {
@@ -223,7 +223,7 @@ pub const GCAllocator = struct {
         if (obj.isMarked) return;
 
         if (debug.LOG_GC) {
-            std.debug.print("{} mark {}\n", .{ @intFromPtr(obj), obj.value() });
+            std.debug.print("{} mark {f}\n", .{ @intFromPtr(obj), obj.value() });
         }
 
         obj.isMarked = true;

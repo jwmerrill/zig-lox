@@ -80,7 +80,7 @@ pub const Chunk = struct {
     }
 
     pub fn disassemble(self: *Chunk, name: []const u8) void {
-        std.debug.print("== {} ==\n", .{name});
+        std.debug.print("== {s} ==\n", .{name});
 
         var i: usize = 0;
         while (i < self.code.items.len) {
@@ -144,13 +144,13 @@ pub const Chunk = struct {
 
     fn simpleInstruction(self: *Chunk, name: []const u8, offset: usize) usize {
         _ = self;
-        std.debug.print("{}\n", .{name});
+        std.debug.print("{s}\n", .{name});
         return offset + 1;
     }
 
     fn constantInstruction(self: *Chunk, name: []const u8, offset: usize) usize {
         const constant = self.code.items[offset + 1];
-        std.debug.print("{} {} {}\n", .{ name, constant, self.constants.items[constant] });
+        std.debug.print("{s} {} {f}\n", .{ name, constant, self.constants.items[constant] });
         std.debug.print("\n", .{});
         return offset + 2;
     }
@@ -158,7 +158,7 @@ pub const Chunk = struct {
     fn byteInstruction(self: *Chunk, name: []const u8, offset: usize) usize {
         const slot: u8 = self.code.items[offset + 1];
         // TODO, book makes more effort on formatting here, see Chap 22.4
-        std.debug.print("{} {}\n", .{ name, slot });
+        std.debug.print("{s} {}\n", .{ name, slot });
         return offset + 2;
     }
 
@@ -166,7 +166,7 @@ pub const Chunk = struct {
         var jump = @as(u16, @intCast(self.code.items[offset + 1])) << 8;
         jump |= self.code.items[offset + 2];
         const target = @as(isize, @intCast(offset)) + 3 + sign * @as(isize, @intCast(jump));
-        std.debug.print("{} {} -> {}\n", .{ name, offset, target });
+        std.debug.print("{s} {} -> {}\n", .{ name, offset, target });
         return offset + 3;
     }
 
@@ -174,7 +174,7 @@ pub const Chunk = struct {
         var offset = initialOffset + 1;
         const constant = self.code.items[offset];
         offset += 1;
-        std.debug.print("{} {} {}\n", .{ name, constant, self.constants.items[constant] });
+        std.debug.print("{s} {} {f}\n", .{ name, constant, self.constants.items[constant] });
 
         // Disassemble upvalues
         const function = self.constants.items[constant].asObj().asFunction();
@@ -185,7 +185,7 @@ pub const Chunk = struct {
             offset += 1;
             const index = self.code.items[offset];
             offset += 1;
-            std.debug.print("{} | {} {}\n", .{ offset - 2, valueType, index });
+            std.debug.print("{} | {s} {}\n", .{ offset - 2, valueType, index });
         }
 
         return offset;
@@ -194,7 +194,7 @@ pub const Chunk = struct {
     fn invokeInstruction(self: *Chunk, name: []const u8, offset: usize) usize {
         const constant = self.code.items[offset + 1];
         const argCount = self.code.items[offset + 2];
-        std.debug.print("{} ({} args) {} '{}'\n'", .{ name, argCount, constant, self.constants.items[constant] });
+        std.debug.print("{s} ({} args) {} '{f}'\n", .{ name, argCount, constant, self.constants.items[constant] });
         return offset + 3;
     }
 };
