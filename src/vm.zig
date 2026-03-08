@@ -137,29 +137,20 @@ pub const VM = struct {
         _ = self.pop();
     }
 
-    fn run(self: *VM) !void {
-        while (true) {
-            if (debug.TRACE_EXECUTION) {
-                // Print debugging information
-                try self.printStack();
-                _ = self.currentChunk().disassembleInstruction(self.currentFrame().ip);
-            }
-
-            const instruction = self.readByte();
-            const opCode = @as(OpCode, @enumFromInt(instruction));
-            try self.runOp(opCode);
-            if (opCode == .Return and self.frames.items.len == 0) break;
+    fn readNextOpCode(self: *VM) OpCode {
+        if (debug.TRACE_EXECUTION) {
+            self.printStack() catch {};
+            _ = self.currentChunk().disassembleInstruction(self.currentFrame().ip);
         }
+        return @enumFromInt(self.readByte());
     }
 
-    fn readString(self: *VM) *Obj.String {
-        const constant = self.readByte();
-        const nameValue = self.currentChunk().constants.items[constant];
-        return nameValue.asObj().asString();
-    }
-
-    fn runOp(self: *VM, opCode: OpCode) !void {
-        switch (opCode) {
+    fn run(self: *VM) !void {
+        // Use labeled switch for efficient dispatch. Each prong jumps
+        // directly to the next instruction's handler, giving the CPU's
+        // branch predictor separate branch sites per opcode transition.
+        const initial: OpCode = self.readNextOpCode();
+        dispatch: switch (initial) {
             .Return => {
                 const result = self.pop();
                 const frame = self.frames.pop() orelse unreachable;
@@ -170,17 +161,21 @@ pub const VM = struct {
 
                 try self.stack.resize(frame.start);
                 self.push(result);
+                continue :dispatch self.readNextOpCode();
             },
             .Pop => {
                 _ = self.pop();
+                continue :dispatch self.readNextOpCode();
             },
             .GetLocal => {
                 const slot = self.readByte();
                 self.push(self.stack.items[self.currentFrame().start + slot]);
+                continue :dispatch self.readNextOpCode();
             },
             .SetLocal => {
                 const slot = self.readByte();
                 self.stack.items[self.currentFrame().start + slot] = self.peek(0);
+                continue :dispatch self.readNextOpCode();
             },
             .GetGlobal => {
                 const name = self.readString();
@@ -189,13 +184,15 @@ pub const VM = struct {
                     return self.runtimeError("Undefined variable '{s}'.", .{name.bytes});
                 }
                 self.push(value);
+                continue :dispatch self.readNextOpCode();
             },
             .DefineGlobal => {
                 _ = try self.globals.set(self.readString(), self.peek(0));
-                // NOTE don’t pop until value is in the hash table so
+                // NOTE don't pop until value is in the hash table so
                 // that we don't lose the value if the GC runs during
                 // the set operation
                 _ = self.pop();
+                continue :dispatch self.readNextOpCode();
             },
             .SetGlobal => {
                 const name = self.readString();
@@ -203,16 +200,19 @@ pub const VM = struct {
                     _ = self.globals.delete(name);
                     return self.runtimeError("Undefined variable '{s}'.", .{name.bytes});
                 }
+                continue :dispatch self.readNextOpCode();
             },
             .GetUpvalue => {
                 const slot = self.readByte();
                 // Upvalues are guaranteed to be filled in by the time we get here
                 self.push(self.currentFrame().closure.upvalues[slot].?.location.*);
+                continue :dispatch self.readNextOpCode();
             },
             .SetUpvalue => {
                 const slot = self.readByte();
                 // Upvalues are guaranteed to be filled in by the time we get here
                 self.currentFrame().closure.upvalues[slot].?.location.* = self.peek(0);
+                continue :dispatch self.readNextOpCode();
             },
             .GetProperty => {
                 const maybeObj = self.peek(0);
@@ -235,6 +235,7 @@ pub const VM = struct {
                         }
                     },
                 }
+                continue :dispatch self.readNextOpCode();
             },
             .SetProperty => {
                 const maybeObj = self.peek(1);
@@ -253,18 +254,22 @@ pub const VM = struct {
                         self.push(value);
                     },
                 }
+                continue :dispatch self.readNextOpCode();
             },
             .GetSuper => {
                 const name = self.readString();
                 const superclass = self.pop().asObj().asClass();
                 try self.bindMethod(superclass, name);
+                continue :dispatch self.readNextOpCode();
             },
             .CloseUpvalue => {
                 self.closeUpvalues(&self.stack.items[self.stack.items.len - 2]);
                 _ = self.pop();
+                continue :dispatch self.readNextOpCode();
             },
             .Class => {
                 self.push((try Obj.Class.create(self, self.readString())).obj.value());
+                continue :dispatch self.readNextOpCode();
             },
             .Inherit => {
                 const maybeObj = self.peek(1);
@@ -281,40 +286,49 @@ pub const VM = struct {
                 }
 
                 _ = self.pop(); // Subclass
+                continue :dispatch self.readNextOpCode();
             },
             .Method => {
                 try self.defineMethod(self.readString());
+                continue :dispatch self.readNextOpCode();
             },
             .Print => {
                 try self.outWriter.print("{f}\n", .{self.pop()});
                 try self.outWriter.flush();
+                continue :dispatch self.readNextOpCode();
             },
             .Jump => {
                 const offset = self.readShort();
                 self.currentFrame().ip += offset;
+                continue :dispatch self.readNextOpCode();
             },
             .JumpIfFalse => {
                 const offset = self.readShort();
                 if (self.peek(0).isFalsey()) self.currentFrame().ip += offset;
+                continue :dispatch self.readNextOpCode();
             },
             .Loop => {
                 const offset = self.readShort();
                 self.currentFrame().ip -= offset;
+                continue :dispatch self.readNextOpCode();
             },
             .Call => {
                 const argCount = self.readByte();
                 try self.callValue(self.peek(argCount), argCount);
+                continue :dispatch self.readNextOpCode();
             },
             .Invoke => {
                 const method = self.readString();
                 const argCount = self.readByte();
                 try self.invoke(method, argCount);
+                continue :dispatch self.readNextOpCode();
             },
             .SuperInvoke => {
                 const method = self.readString();
                 const argCount = self.readByte();
                 const superclass = self.pop().asObj().asClass();
                 try self.invokeFromClass(superclass, method, argCount);
+                continue :dispatch self.readNextOpCode();
             },
             .Closure => {
                 const constant = self.readByte();
@@ -338,19 +352,31 @@ pub const VM = struct {
                         upvalue.* = self.currentFrame().closure.upvalues[index];
                     }
                 }
+                continue :dispatch self.readNextOpCode();
             },
             .Constant => {
                 const constant = self.readByte();
                 const value = self.currentChunk().constants.items[constant];
                 self.push(value);
+                continue :dispatch self.readNextOpCode();
             },
-            .Nil => self.push(Value.nil()),
-            .True => self.push(Value.fromBool(true)),
-            .False => self.push(Value.fromBool(false)),
+            .Nil => {
+                self.push(Value.nil());
+                continue :dispatch self.readNextOpCode();
+            },
+            .True => {
+                self.push(Value.fromBool(true));
+                continue :dispatch self.readNextOpCode();
+            },
+            .False => {
+                self.push(Value.fromBool(false));
+                continue :dispatch self.readNextOpCode();
+            },
             .Equal => {
                 const b = self.pop();
                 const a = self.pop();
                 self.push(Value.fromBool(a.equals(b)));
+                continue :dispatch self.readNextOpCode();
             },
             .Greater => {
                 const rhs = self.pop();
@@ -359,6 +385,7 @@ pub const VM = struct {
                     return self.runtimeError("Operands must be numbers.", .{});
                 }
                 self.push(Value.fromBool(lhs.asNumber() > rhs.asNumber()));
+                continue :dispatch self.readNextOpCode();
             },
             .Less => {
                 const rhs = self.pop();
@@ -367,11 +394,13 @@ pub const VM = struct {
                     return self.runtimeError("Operands must be numbers.", .{});
                 }
                 self.push(Value.fromBool(lhs.asNumber() < rhs.asNumber()));
+                continue :dispatch self.readNextOpCode();
             },
             .Negate => {
                 const value = self.pop();
                 if (!value.isNumber()) return self.runtimeError("Operand must be a number.", .{});
                 self.push(Value.fromNumber(-value.asNumber()));
+                continue :dispatch self.readNextOpCode();
             },
             .Add => {
                 const rhs = self.pop();
@@ -383,12 +412,31 @@ pub const VM = struct {
                 } else {
                     return self.runtimeError("Operands must be two numbers or two strings.", .{});
                 }
+                continue :dispatch self.readNextOpCode();
             },
-            .Subtract => try self.binaryNumericOp(sub),
-            .Multiply => try self.binaryNumericOp(mul),
-            .Divide => try self.binaryNumericOp(div),
-            .Not => self.push(Value.fromBool(self.pop().isFalsey())),
+            .Subtract => {
+                try self.binaryNumericOp(sub);
+                continue :dispatch self.readNextOpCode();
+            },
+            .Multiply => {
+                try self.binaryNumericOp(mul);
+                continue :dispatch self.readNextOpCode();
+            },
+            .Divide => {
+                try self.binaryNumericOp(div);
+                continue :dispatch self.readNextOpCode();
+            },
+            .Not => {
+                self.push(Value.fromBool(self.pop().isFalsey()));
+                continue :dispatch self.readNextOpCode();
+            },
         }
+    }
+
+    fn readString(self: *VM) *Obj.String {
+        const constant = self.readByte();
+        const nameValue = self.currentChunk().constants.items[constant];
+        return nameValue.asObj().asString();
     }
 
     fn binaryNumericOp(self: *VM, comptime op: anytype) !void {
