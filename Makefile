@@ -59,12 +59,12 @@ www-server: www
 	cd www && python3 -m http.server
 
 test: lox
-	$(ZIG) run util/test.zig -lc -- bin/lox $(TEST_FILES)
+	$(ZIG) run util/test.zig -- bin/lox $(TEST_FILES)
 
 .PHONY: zig-version
 zig-version:
 	$(ZIG) version
-	$(ZIG) run util/test.zig -lc -- bin/lox $(TEST_FILES)
+	$(ZIG) run util/test.zig -- bin/lox $(TEST_FILES)
 
 benchmark: release
-	$(ZIG) run util/benchmark.zig -lc -- bin/lox $(BENCHMARK_FILES)
+	$(ZIG) run util/benchmark.zig -- bin/lox $(BENCHMARK_FILES)
