@@ -71,3 +71,7 @@ Zig allocator choice matters — see https://ziglang.org/documentation/0.15.0/#C
 - **Upvalues store `*Value` pointers** to either stack or heap; this prevents dynamic stack resizing
 - **String interning** through global `strings` table in `table.zig`
 - **No string escape sequences** (by design from the book)
+
+## Commit Messages
+
+Do not include Claude-specific content in commit messages. This includes session URLs (e.g. `https://claude.ai/code/...`), Claude model/version identifiers, and any other AI-tool metadata. Commit messages should read as if written by a human developer.
