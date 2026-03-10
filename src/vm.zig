@@ -157,10 +157,11 @@ pub const VM = struct {
     }
 
     fn run(self: *VM) !void {
-        // Cache ip and code as locals to encourage register allocation.
-        // These are the two hottest accesses in the dispatch loop.
+        // Cache ip, code, and constants as locals to encourage register
+        // allocation. These are the hottest accesses in the dispatch loop.
         var ip = self.currentFrame().saved_ip;
         var code = self.currentChunk().code;
+        var constants = self.currentChunk().constants;
 
         // Save ip to the current frame and reload from (possibly new)
         // top frame. Used only at frame boundaries (Call/Invoke/Return).
@@ -168,12 +169,10 @@ pub const VM = struct {
             inline fn save(vm: *VM, ip_val: usize) void {
                 vm.currentFrame().saved_ip = ip_val;
             }
-            inline fn load(vm: *VM) struct { usize, []u8 } {
+            inline fn load(vm: *VM) struct { usize, []u8, []Value } {
                 const f = vm.currentFrame();
-                return .{ f.saved_ip, f.closure.function.chunk.code };
-            }
-            inline fn constants(vm: *VM) []const Value {
-                return vm.currentFrame().closure.function.chunk.constants;
+                const chunk = f.closure.function.chunk;
+                return .{ f.saved_ip, chunk.code, chunk.constants };
             }
         };
 
@@ -192,7 +191,7 @@ pub const VM = struct {
 
                 try self.stack.resize(popped.start);
                 self.push(result);
-                ip, code = frame.load(self);
+                ip, code, constants = frame.load(self);
                 continue :dispatch nextOp(&ip, code, self);
             },
             .Pop => {
@@ -210,7 +209,7 @@ pub const VM = struct {
                 continue :dispatch nextOp(&ip, code, self);
             },
             .GetGlobal => {
-                const name = readString(&ip, code, frame.constants(self));
+                const name = readString(&ip, code, constants);
                 var value: Value = undefined;
                 if (!self.globals.get(name, &value)) {
                     return self.runtimeError(ip, "Undefined variable '{s}'.", .{name.bytes});
@@ -219,7 +218,7 @@ pub const VM = struct {
                 continue :dispatch nextOp(&ip, code, self);
             },
             .DefineGlobal => {
-                _ = try self.globals.set(readString(&ip, code, frame.constants(self)), self.peek(0));
+                _ = try self.globals.set(readString(&ip, code, constants), self.peek(0));
                 // NOTE don't pop until value is in the hash table so
                 // that we don't lose the value if the GC runs during
                 // the set operation
@@ -227,7 +226,7 @@ pub const VM = struct {
                 continue :dispatch nextOp(&ip, code, self);
             },
             .SetGlobal => {
-                const name = readString(&ip, code, frame.constants(self));
+                const name = readString(&ip, code, constants);
                 if (try self.globals.set(name, self.peek(0))) {
                     _ = self.globals.delete(name);
                     return self.runtimeError(ip, "Undefined variable '{s}'.", .{name.bytes});
@@ -258,7 +257,7 @@ pub const VM = struct {
                     },
                     .Instance => {
                         const instance = obj.asInstance();
-                        const name = readString(&ip, code, frame.constants(self));
+                        const name = readString(&ip, code, constants);
 
                         var value: Value = undefined;
                         if (instance.fields.get(name, &value)) {
@@ -283,7 +282,7 @@ pub const VM = struct {
                     },
                     .Instance => {
                         const instance = obj.asInstance();
-                        _ = try instance.fields.set(readString(&ip, code, frame.constants(self)), self.peek(0));
+                        _ = try instance.fields.set(readString(&ip, code, constants), self.peek(0));
 
                         const value = self.pop();
                         _ = self.pop();
@@ -293,7 +292,7 @@ pub const VM = struct {
                 continue :dispatch nextOp(&ip, code, self);
             },
             .GetSuper => {
-                const name = readString(&ip, code, frame.constants(self));
+                const name = readString(&ip, code, constants);
                 const superclass = self.pop().asObj().asClass();
                 try self.bindMethod(ip, superclass, name);
                 continue :dispatch nextOp(&ip, code, self);
@@ -304,7 +303,7 @@ pub const VM = struct {
                 continue :dispatch nextOp(&ip, code, self);
             },
             .Class => {
-                self.push((try Obj.Class.create(self, readString(&ip, code, frame.constants(self)))).obj.value());
+                self.push((try Obj.Class.create(self, readString(&ip, code, constants))).obj.value());
                 continue :dispatch nextOp(&ip, code, self);
             },
             .Inherit => {
@@ -327,7 +326,7 @@ pub const VM = struct {
                 continue :dispatch nextOp(&ip, code, self);
             },
             .Method => {
-                try self.defineMethod(readString(&ip, code, frame.constants(self)));
+                try self.defineMethod(readString(&ip, code, constants));
                 continue :dispatch nextOp(&ip, code, self);
             },
             .Print => {
@@ -354,29 +353,29 @@ pub const VM = struct {
                 const argCount = readByte(&ip, code);
                 frame.save(self, ip);
                 try self.callValue(ip, self.peek(argCount), argCount);
-                ip, code = frame.load(self);
+                ip, code, constants = frame.load(self);
                 continue :dispatch nextOp(&ip, code, self);
             },
             .Invoke => {
-                const method = readString(&ip, code, frame.constants(self));
+                const method = readString(&ip, code, constants);
                 const argCount = readByte(&ip, code);
                 frame.save(self, ip);
                 try self.invoke(ip, method, argCount);
-                ip, code = frame.load(self);
+                ip, code, constants = frame.load(self);
                 continue :dispatch nextOp(&ip, code, self);
             },
             .SuperInvoke => {
-                const method = readString(&ip, code, frame.constants(self));
+                const method = readString(&ip, code, constants);
                 const argCount = readByte(&ip, code);
                 const superclass = self.pop().asObj().asClass();
                 frame.save(self, ip);
                 try self.invokeFromClass(ip, superclass, method, argCount);
-                ip, code = frame.load(self);
+                ip, code, constants = frame.load(self);
                 continue :dispatch nextOp(&ip, code, self);
             },
             .Closure => {
                 const constant = readByte(&ip, code);
-                const value = frame.constants(self)[constant];
+                const value = constants[constant];
                 const function = value.asObj().asFunction();
                 const closure = try Obj.Closure.create(self, function);
                 self.push(closure.obj.value());
@@ -400,7 +399,7 @@ pub const VM = struct {
             },
             .Constant => {
                 const constant = readByte(&ip, code);
-                const value = frame.constants(self)[constant];
+                const value = constants[constant];
                 self.push(value);
                 continue :dispatch nextOp(&ip, code, self);
             },
