@@ -43,47 +43,31 @@ pub const OpCode = enum(u8) {
     Not,
 };
 
+/// Immutable bytecode container. Produced by ChunkBuilder.toChunk() after
+/// compilation is complete. Holds owned slices that must be freed via deinit.
 pub const Chunk = struct {
-    allocator: Allocator,
-    code: ArrayListUnmanaged(u8),
-    constants: ArrayListUnmanaged(Value),
-    lines: ArrayListUnmanaged(usize),
+    code: []u8,
+    constants: []Value,
+    lines: []usize,
 
-    pub fn init(allocator: Allocator) Chunk {
-        return Chunk{
-            .allocator = allocator,
-            .code = .{},
-            .constants = .{},
-            .lines = .{},
-        };
-    }
+    pub const empty: Chunk = .{
+        .code = &.{},
+        .constants = &.{},
+        .lines = &.{},
+    };
 
-    pub fn deinit(self: *Chunk) void {
-        self.code.deinit(self.allocator);
-        self.constants.deinit(self.allocator);
-        self.lines.deinit(self.allocator);
-    }
-
-    pub fn write(self: *Chunk, byte: u8, line: usize) !void {
-        try self.code.append(self.allocator, byte);
-        try self.lines.append(self.allocator, line);
-    }
-
-    pub fn writeOp(self: *Chunk, op: OpCode, line: usize) !void {
-        try self.write(@intFromEnum(op), line);
-    }
-
-    pub fn addConstant(self: *Chunk, value: Value) !u9 {
-        const index = @as(u9, @intCast(self.constants.items.len));
-        try self.constants.append(self.allocator, value);
-        return index;
+    pub fn deinit(self: *Chunk, allocator: Allocator) void {
+        if (self.code.len > 0) allocator.free(self.code);
+        if (self.constants.len > 0) allocator.free(self.constants);
+        if (self.lines.len > 0) allocator.free(self.lines);
+        self.* = empty;
     }
 
     pub fn disassemble(self: *Chunk, name: []const u8) void {
         std.debug.print("== {s} ==\n", .{name});
 
         var i: usize = 0;
-        while (i < self.code.items.len) {
+        while (i < self.code.len) {
             i = self.disassembleInstruction(i);
         }
     }
@@ -93,14 +77,14 @@ pub const Chunk = struct {
         std.debug.print("{:0>4} ", .{offset});
 
         // Print line
-        if (offset > 0 and self.lines.items[offset] == self.lines.items[offset - 1]) {
+        if (offset > 0 and self.lines[offset] == self.lines[offset - 1]) {
             std.debug.print("   | ", .{});
         } else {
-            std.debug.print("{: >4} ", .{self.lines.items[offset]});
+            std.debug.print("{: >4} ", .{self.lines[offset]});
         }
 
         // Print instruction
-        const instruction = @as(OpCode, @enumFromInt(self.code.items[offset]));
+        const instruction = @as(OpCode, @enumFromInt(self.code[offset]));
         return switch (instruction) {
             .Return => self.simpleInstruction("OP_RETURN", offset),
             .Pop => self.simpleInstruction("OP_POP", offset),
@@ -149,22 +133,22 @@ pub const Chunk = struct {
     }
 
     fn constantInstruction(self: *Chunk, name: []const u8, offset: usize) usize {
-        const constant = self.code.items[offset + 1];
-        std.debug.print("{s} {} {f}\n", .{ name, constant, self.constants.items[constant] });
+        const constant = self.code[offset + 1];
+        std.debug.print("{s} {} {f}\n", .{ name, constant, self.constants[constant] });
         std.debug.print("\n", .{});
         return offset + 2;
     }
 
     fn byteInstruction(self: *Chunk, name: []const u8, offset: usize) usize {
-        const slot: u8 = self.code.items[offset + 1];
+        const slot: u8 = self.code[offset + 1];
         // TODO, book makes more effort on formatting here, see Chap 22.4
         std.debug.print("{s} {}\n", .{ name, slot });
         return offset + 2;
     }
 
     fn jumpInstruction(self: *Chunk, name: []const u8, sign: isize, offset: usize) usize {
-        var jump = @as(u16, @intCast(self.code.items[offset + 1])) << 8;
-        jump |= self.code.items[offset + 2];
+        var jump = @as(u16, @intCast(self.code[offset + 1])) << 8;
+        jump |= self.code[offset + 2];
         const target = @as(isize, @intCast(offset)) + 3 + sign * @as(isize, @intCast(jump));
         std.debug.print("{s} {} -> {}\n", .{ name, offset, target });
         return offset + 3;
@@ -172,18 +156,18 @@ pub const Chunk = struct {
 
     fn closureInstruction(self: *Chunk, name: []const u8, initialOffset: usize) usize {
         var offset = initialOffset + 1;
-        const constant = self.code.items[offset];
+        const constant = self.code[offset];
         offset += 1;
-        std.debug.print("{s} {} {f}\n", .{ name, constant, self.constants.items[constant] });
+        std.debug.print("{s} {} {f}\n", .{ name, constant, self.constants[constant] });
 
         // Disassemble upvalues
-        const function = self.constants.items[constant].asObj().asFunction();
+        const function = self.constants[constant].asObj().asFunction();
         var i: usize = 0;
         while (i < function.upvalueCount) : (i += 1) {
-            const isLocal = self.code.items[offset] != 1;
+            const isLocal = self.code[offset] != 1;
             const valueType = if (isLocal) "local" else "upvalue";
             offset += 1;
-            const index = self.code.items[offset];
+            const index = self.code[offset];
             offset += 1;
             std.debug.print("{} | {s} {}\n", .{ offset - 2, valueType, index });
         }
@@ -192,9 +176,63 @@ pub const Chunk = struct {
     }
 
     fn invokeInstruction(self: *Chunk, name: []const u8, offset: usize) usize {
-        const constant = self.code.items[offset + 1];
-        const argCount = self.code.items[offset + 2];
-        std.debug.print("{s} ({} args) {} '{f}'\n", .{ name, argCount, constant, self.constants.items[constant] });
+        const constant = self.code[offset + 1];
+        const argCount = self.code[offset + 2];
+        std.debug.print("{s} ({} args) {} '{f}'\n", .{ name, argCount, constant, self.constants[constant] });
         return offset + 3;
+    }
+};
+
+/// Mutable bytecode builder used during compilation. Call toChunk() to
+/// produce an immutable Chunk when compilation of a function is complete.
+pub const ChunkBuilder = struct {
+    allocator: Allocator,
+    code: ArrayListUnmanaged(u8),
+    constants: ArrayListUnmanaged(Value),
+    lines: ArrayListUnmanaged(usize),
+
+    pub fn init(allocator: Allocator) ChunkBuilder {
+        return ChunkBuilder{
+            .allocator = allocator,
+            .code = .{},
+            .constants = .{},
+            .lines = .{},
+        };
+    }
+
+    pub fn deinit(self: *ChunkBuilder) void {
+        self.code.deinit(self.allocator);
+        self.constants.deinit(self.allocator);
+        self.lines.deinit(self.allocator);
+    }
+
+    /// Finalize the builder into an immutable Chunk, transferring ownership
+    /// of the backing memory. The builder is reset to empty afterward.
+    pub fn toChunk(self: *ChunkBuilder) !Chunk {
+        const code = try self.code.toOwnedSlice(self.allocator);
+        errdefer self.allocator.free(code);
+        const constants = try self.constants.toOwnedSlice(self.allocator);
+        errdefer self.allocator.free(constants);
+        const lines = try self.lines.toOwnedSlice(self.allocator);
+        return .{
+            .code = code,
+            .constants = constants,
+            .lines = lines,
+        };
+    }
+
+    pub fn write(self: *ChunkBuilder, byte: u8, line: usize) !void {
+        try self.code.append(self.allocator, byte);
+        try self.lines.append(self.allocator, line);
+    }
+
+    pub fn writeOp(self: *ChunkBuilder, op: OpCode, line: usize) !void {
+        try self.write(@intFromEnum(op), line);
+    }
+
+    pub fn addConstant(self: *ChunkBuilder, value: Value) !u9 {
+        const index = @as(u9, @intCast(self.constants.items.len));
+        try self.constants.append(self.allocator, value);
+        return index;
     }
 };

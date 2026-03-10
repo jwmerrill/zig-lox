@@ -160,7 +160,7 @@ pub const VM = struct {
         // Cache ip and code as locals to encourage register allocation.
         // These are the two hottest accesses in the dispatch loop.
         var ip = self.currentFrame().saved_ip;
-        var code = self.currentChunk().code.items;
+        var code = self.currentChunk().code;
 
         // Save ip to the current frame and reload from (possibly new)
         // top frame. Used only at frame boundaries (Call/Invoke/Return).
@@ -170,10 +170,10 @@ pub const VM = struct {
             }
             inline fn load(vm: *VM) struct { usize, []u8 } {
                 const f = vm.currentFrame();
-                return .{ f.saved_ip, f.closure.function.chunk.code.items };
+                return .{ f.saved_ip, f.closure.function.chunk.code };
             }
             inline fn constants(vm: *VM) []const Value {
-                return vm.currentFrame().closure.function.chunk.constants.items;
+                return vm.currentFrame().closure.function.chunk.constants;
             }
         };
 
@@ -712,7 +712,7 @@ pub const VM = struct {
             const frame = self.frames.items[i];
             const function = frame.closure.function;
             const frame_ip = if (is_top) current_ip else frame.saved_ip;
-            const line = function.chunk.lines.items[frame_ip - 1];
+            const line = function.chunk.lines[frame_ip - 1];
             const name = if (function.name) |str| str.bytes else "<script>";
             try self.errWriter.print("[line {d}] in {s}\n", .{ line, name });
             is_top = false;

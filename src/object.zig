@@ -189,14 +189,14 @@ pub const Obj = struct {
                 .arity = 0,
                 .upvalueCount = 0,
                 .name = null,
-                .chunk = Chunk.init(vm.allocator),
+                .chunk = Chunk.empty,
             };
 
             return out;
         }
 
         pub fn destroy(self: *Function, vm: *VM) void {
-            self.chunk.deinit();
+            self.chunk.deinit(vm.allocator);
             vm.allocator.destroy(self);
         }
     };

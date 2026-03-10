@@ -6,6 +6,7 @@ const Token = @import("./scanner.zig").Token;
 const TokenType = @import("./scanner.zig").TokenType;
 const VM = @import("./vm.zig").VM;
 const Chunk = @import("./chunk.zig").Chunk;
+const ChunkBuilder = @import("./chunk.zig").ChunkBuilder;
 const OpCode = @import("./chunk.zig").OpCode;
 const Value = @import("./value.zig").Value;
 const Obj = @import("./object.zig").Obj;
@@ -44,6 +45,7 @@ pub const Compiler = struct {
     enclosing: ?*Compiler,
     function: *Obj.Function,
     functionType: FunctionType,
+    chunk: ChunkBuilder,
     locals: std.ArrayListUnmanaged(Local),
     upvalues: std.ArrayListUnmanaged(Upvalue),
     scopeDepth: usize,
@@ -68,6 +70,7 @@ pub const Compiler = struct {
             // necessary to me.
             .function = try Obj.Function.create(vm),
             .functionType = functionType,
+            .chunk = ChunkBuilder.init(vm.allocator),
             .locals = locals,
             .upvalues = .{},
             .scopeDepth = 0,
@@ -76,6 +79,7 @@ pub const Compiler = struct {
     }
 
     pub fn deinit(self: *Compiler) void {
+        self.chunk.deinit();
         self.locals.deinit(self.allocator);
         self.upvalues.deinit(self.allocator);
     }
@@ -167,8 +171,8 @@ pub const Parser = struct {
         };
     }
 
-    pub fn currentChunk(self: *Parser) *Chunk {
-        return &self.compiler.function.chunk;
+    pub fn currentChunk(self: *Parser) *ChunkBuilder {
+        return &self.compiler.chunk;
     }
 
     fn advance(self: *Parser) !void {
@@ -295,15 +299,17 @@ pub const Parser = struct {
     fn end(self: *Parser) !*Obj.Function {
         try self.emitReturn();
 
+        const fun = self.compiler.function;
+        fun.chunk = try self.compiler.chunk.toChunk();
+
         if (debug.PRINT_CODE) {
             if (!self.hadError) {
-                const maybeName = self.compiler.function.name;
+                const maybeName = fun.name;
                 const name = if (maybeName) |o| o.bytes else "<script>";
-                self.currentChunk().disassemble(name);
+                fun.chunk.disassemble(name);
             }
         }
 
-        const fun = self.compiler.function;
         if (self.compiler.enclosing) |compiler| {
             self.compiler = compiler;
         }

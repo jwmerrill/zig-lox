@@ -181,7 +181,7 @@ pub const GCAllocator = struct {
             .Function => {
                 const function = obj.asFunction();
                 if (function.name) |name| self.markObject(&name.obj);
-                self.markArray(function.chunk.constants.items);
+                self.markArray(function.chunk.constants);
             },
             .Closure => {
                 const closure = obj.asClosure();
