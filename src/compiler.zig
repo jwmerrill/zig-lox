@@ -300,7 +300,7 @@ pub const Parser = struct {
         try self.emitReturn();
 
         const fun = self.compiler.function;
-        fun.chunk = try self.compiler.chunk.toChunk();
+        fun.chunk = self.compiler.chunk.toChunk();
 
         if (debug.PRINT_CODE) {
             if (!self.hadError) {
