@@ -31,6 +31,39 @@ fn div(x: f64, y: f64) f64 {
     return x / y;
 }
 
+// Inline bytecode reading helpers that operate on local ip/code variables.
+// Using inline fn with pointer parameters lets the compiler keep ip in a
+// register while keeping the encoding logic in one place.
+
+inline fn readByte(ip: *usize, code_: []u8) u8 {
+    const byte = code_[ip.*];
+    ip.* += 1;
+    return byte;
+}
+
+inline fn readShort(ip: *usize, code_: []u8) u16 {
+    const hi: u16 = @intCast(code_[ip.*]);
+    const lo: u16 = code_[ip.* + 1];
+    ip.* += 2;
+    return (hi << 8) | lo;
+}
+
+inline fn readConstant(ip: *usize, code_: []u8, constants: []const Value) Value {
+    return constants[readByte(ip, code_)];
+}
+
+inline fn readString(ip: *usize, code_: []u8, constants: []const Value) *Obj.String {
+    return readConstant(ip, code_, constants).asObj().asString();
+}
+
+inline fn nextOp(ip: *usize, code_: []u8, self: *VM) OpCode {
+    if (debug.TRACE_EXECUTION) {
+        self.printStack() catch {};
+        _ = self.currentChunk().disassembleInstruction(ip.*);
+    }
+    return @enumFromInt(readByte(ip, code_));
+}
+
 const CallFrame = struct {
     closure: *Obj.Closure,
     ip: usize,
@@ -137,19 +170,27 @@ pub const VM = struct {
         _ = self.pop();
     }
 
-    fn readNextOpCode(self: *VM) OpCode {
-        if (debug.TRACE_EXECUTION) {
-            self.printStack() catch {};
-            _ = self.currentChunk().disassembleInstruction(self.currentFrame().ip);
-        }
-        return @enumFromInt(self.readByte());
-    }
-
     fn run(self: *VM) !void {
+        // Cache ip and code as locals to encourage register allocation.
+        // These are the two hottest accesses in the dispatch loop.
+        var ip = self.currentFrame().ip;
+        var code = self.currentChunk().code.items;
+
+        // Helpers to save/reload locals at frame boundaries.
+        const saveAndLoad = struct {
+            inline fn saveIp(vm: *VM, ip_val: usize) void {
+                vm.currentFrame().ip = ip_val;
+            }
+            inline fn load(vm: *VM) struct { usize, []u8 } {
+                const frame = vm.currentFrame();
+                return .{ frame.ip, frame.closure.function.chunk.code.items };
+            }
+        };
+
         // Use labeled switch for efficient dispatch. Each prong jumps
         // directly to the next instruction's handler, giving the CPU's
         // branch predictor separate branch sites per opcode transition.
-        const initial: OpCode = self.readNextOpCode();
+        const initial: OpCode = nextOp(&ip, code, self);
         dispatch: switch (initial) {
             .Return => {
                 const result = self.pop();
@@ -161,121 +202,138 @@ pub const VM = struct {
 
                 try self.stack.resize(frame.start);
                 self.push(result);
-                continue :dispatch self.readNextOpCode();
+                ip, code = saveAndLoad.load(self);
+                continue :dispatch nextOp(&ip, code, self);
             },
             .Pop => {
                 _ = self.pop();
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
             .GetLocal => {
-                const slot = self.readByte();
+                const slot = readByte(&ip, code);
                 self.push(self.stack.items[self.currentFrame().start + slot]);
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
             .SetLocal => {
-                const slot = self.readByte();
+                const slot = readByte(&ip, code);
                 self.stack.items[self.currentFrame().start + slot] = self.peek(0);
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
             .GetGlobal => {
-                const name = self.readString();
+                const name = readString(&ip, code, self.currentFrame().closure.function.chunk.constants.items);
                 var value: Value = undefined;
                 if (!self.globals.get(name, &value)) {
+                    saveAndLoad.saveIp(self, ip);
                     return self.runtimeError("Undefined variable '{s}'.", .{name.bytes});
                 }
                 self.push(value);
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
             .DefineGlobal => {
-                _ = try self.globals.set(self.readString(), self.peek(0));
+                _ = try self.globals.set(readString(&ip, code, self.currentFrame().closure.function.chunk.constants.items), self.peek(0));
                 // NOTE don't pop until value is in the hash table so
                 // that we don't lose the value if the GC runs during
                 // the set operation
                 _ = self.pop();
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
             .SetGlobal => {
-                const name = self.readString();
+                const name = readString(&ip, code, self.currentFrame().closure.function.chunk.constants.items);
                 if (try self.globals.set(name, self.peek(0))) {
                     _ = self.globals.delete(name);
+                    saveAndLoad.saveIp(self, ip);
                     return self.runtimeError("Undefined variable '{s}'.", .{name.bytes});
                 }
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
             .GetUpvalue => {
-                const slot = self.readByte();
+                const slot = readByte(&ip, code);
                 // Upvalues are guaranteed to be filled in by the time we get here
                 self.push(self.currentFrame().closure.upvalues[slot].?.location.*);
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
             .SetUpvalue => {
-                const slot = self.readByte();
+                const slot = readByte(&ip, code);
                 // Upvalues are guaranteed to be filled in by the time we get here
                 self.currentFrame().closure.upvalues[slot].?.location.* = self.peek(0);
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
             .GetProperty => {
                 const maybeObj = self.peek(0);
-                if (!maybeObj.isObj()) return self.runtimeError("Only instances have properties.", .{});
+                if (!maybeObj.isObj()) {
+                    saveAndLoad.saveIp(self, ip);
+                    return self.runtimeError("Only instances have properties.", .{});
+                }
                 const obj = maybeObj.asObj();
                 switch (obj.objType) {
                     .String, .Function, .NativeFunction, .Closure, .Upvalue, .Class, .BoundMethod => {
+                        saveAndLoad.saveIp(self, ip);
                         return self.runtimeError("Only instances have properties.", .{});
                     },
                     .Instance => {
                         const instance = obj.asInstance();
-                        const name = self.readString();
+                        const name = readString(&ip, code, self.currentFrame().closure.function.chunk.constants.items);
 
                         var value: Value = undefined;
                         if (instance.fields.get(name, &value)) {
                             _ = self.pop(); // Instance.
                             self.push(value);
                         } else {
+                            saveAndLoad.saveIp(self, ip);
                             try self.bindMethod(instance.class, name);
                         }
                     },
                 }
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
             .SetProperty => {
                 const maybeObj = self.peek(1);
-                if (!maybeObj.isObj()) return self.runtimeError("Only instances have fields.", .{});
+                if (!maybeObj.isObj()) {
+                    saveAndLoad.saveIp(self, ip);
+                    return self.runtimeError("Only instances have fields.", .{});
+                }
                 const obj = maybeObj.asObj();
                 switch (obj.objType) {
                     .String, .Function, .NativeFunction, .Closure, .Upvalue, .Class, .BoundMethod => {
+                        saveAndLoad.saveIp(self, ip);
                         return self.runtimeError("Only instances have fields.", .{});
                     },
                     .Instance => {
                         const instance = obj.asInstance();
-                        _ = try instance.fields.set(self.readString(), self.peek(0));
+                        _ = try instance.fields.set(readString(&ip, code, self.currentFrame().closure.function.chunk.constants.items), self.peek(0));
 
                         const value = self.pop();
                         _ = self.pop();
                         self.push(value);
                     },
                 }
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
             .GetSuper => {
-                const name = self.readString();
+                const name = readString(&ip, code, self.currentFrame().closure.function.chunk.constants.items);
                 const superclass = self.pop().asObj().asClass();
+                saveAndLoad.saveIp(self, ip);
                 try self.bindMethod(superclass, name);
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
             .CloseUpvalue => {
                 self.closeUpvalues(&self.stack.items[self.stack.items.len - 2]);
                 _ = self.pop();
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
             .Class => {
-                self.push((try Obj.Class.create(self, self.readString())).obj.value());
-                continue :dispatch self.readNextOpCode();
+                self.push((try Obj.Class.create(self, readString(&ip, code, self.currentFrame().closure.function.chunk.constants.items))).obj.value());
+                continue :dispatch nextOp(&ip, code, self);
             },
             .Inherit => {
                 const maybeObj = self.peek(1);
-                if (!maybeObj.isObj()) return self.runtimeError("Superclass must be a class.", .{});
+                if (!maybeObj.isObj()) {
+                    saveAndLoad.saveIp(self, ip);
+                    return self.runtimeError("Superclass must be a class.", .{});
+                }
                 const obj = maybeObj.asObj();
                 if (!obj.isClass()) {
+                    saveAndLoad.saveIp(self, ip);
                     return self.runtimeError("Superclass must be a class.", .{});
                 }
                 const superclass = obj.asClass();
@@ -286,59 +344,65 @@ pub const VM = struct {
                 }
 
                 _ = self.pop(); // Subclass
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
             .Method => {
-                try self.defineMethod(self.readString());
-                continue :dispatch self.readNextOpCode();
+                try self.defineMethod(readString(&ip, code, self.currentFrame().closure.function.chunk.constants.items));
+                continue :dispatch nextOp(&ip, code, self);
             },
             .Print => {
                 try self.outWriter.print("{f}\n", .{self.pop()});
                 try self.outWriter.flush();
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
             .Jump => {
-                const offset = self.readShort();
-                self.currentFrame().ip += offset;
-                continue :dispatch self.readNextOpCode();
+                const offset = readShort(&ip, code);
+                ip += offset;
+                continue :dispatch nextOp(&ip, code, self);
             },
             .JumpIfFalse => {
-                const offset = self.readShort();
-                if (self.peek(0).isFalsey()) self.currentFrame().ip += offset;
-                continue :dispatch self.readNextOpCode();
+                const offset = readShort(&ip, code);
+                if (self.peek(0).isFalsey()) ip += offset;
+                continue :dispatch nextOp(&ip, code, self);
             },
             .Loop => {
-                const offset = self.readShort();
-                self.currentFrame().ip -= offset;
-                continue :dispatch self.readNextOpCode();
+                const offset = readShort(&ip, code);
+                ip -= offset;
+                continue :dispatch nextOp(&ip, code, self);
             },
             .Call => {
-                const argCount = self.readByte();
+                const argCount = readByte(&ip, code);
+                saveAndLoad.saveIp(self, ip);
                 try self.callValue(self.peek(argCount), argCount);
-                continue :dispatch self.readNextOpCode();
+                ip, code = saveAndLoad.load(self);
+                continue :dispatch nextOp(&ip, code, self);
             },
             .Invoke => {
-                const method = self.readString();
-                const argCount = self.readByte();
+                const method = readString(&ip, code, self.currentFrame().closure.function.chunk.constants.items);
+                const argCount = readByte(&ip, code);
+                saveAndLoad.saveIp(self, ip);
                 try self.invoke(method, argCount);
-                continue :dispatch self.readNextOpCode();
+                ip, code = saveAndLoad.load(self);
+                continue :dispatch nextOp(&ip, code, self);
             },
             .SuperInvoke => {
-                const method = self.readString();
-                const argCount = self.readByte();
+                const method = readString(&ip, code, self.currentFrame().closure.function.chunk.constants.items);
+                const argCount = readByte(&ip, code);
                 const superclass = self.pop().asObj().asClass();
+                saveAndLoad.saveIp(self, ip);
                 try self.invokeFromClass(superclass, method, argCount);
-                continue :dispatch self.readNextOpCode();
+                ip, code = saveAndLoad.load(self);
+                continue :dispatch nextOp(&ip, code, self);
             },
             .Closure => {
-                const constant = self.readByte();
-                const value = self.currentChunk().constants.items[constant];
+                const constant = readByte(&ip, code);
+                const value = self.currentFrame().closure.function.chunk.constants.items[constant];
                 const function = value.asObj().asFunction();
                 const closure = try Obj.Closure.create(self, function);
                 self.push(closure.obj.value());
                 for (closure.upvalues) |*upvalue| {
-                    const isLocal = self.readByte() != 0;
-                    const index = self.readByte();
+                    const isLocal = readByte(&ip, code) != 0;
+                    const index = readByte(&ip, code);
                     if (isLocal) {
                         // WARNING if the stack is ever resized, this
                         // pointer into it becomes invalid. We can avoid
@@ -352,91 +416,95 @@ pub const VM = struct {
                         upvalue.* = self.currentFrame().closure.upvalues[index];
                     }
                 }
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
             .Constant => {
-                const constant = self.readByte();
-                const value = self.currentChunk().constants.items[constant];
+                const constant = readByte(&ip, code);
+                const value = self.currentFrame().closure.function.chunk.constants.items[constant];
                 self.push(value);
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
             .Nil => {
                 self.push(Value.nil());
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
             .True => {
                 self.push(Value.fromBool(true));
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
             .False => {
                 self.push(Value.fromBool(false));
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
             .Equal => {
                 const b = self.pop();
                 const a = self.pop();
                 self.push(Value.fromBool(a.equals(b)));
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
             .Greater => {
                 const rhs = self.pop();
                 const lhs = self.pop();
                 if (!lhs.isNumber() or !rhs.isNumber()) {
+                    saveAndLoad.saveIp(self, ip);
                     return self.runtimeError("Operands must be numbers.", .{});
                 }
                 self.push(Value.fromBool(lhs.asNumber() > rhs.asNumber()));
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
             .Less => {
                 const rhs = self.pop();
                 const lhs = self.pop();
                 if (!lhs.isNumber() or !rhs.isNumber()) {
+                    saveAndLoad.saveIp(self, ip);
                     return self.runtimeError("Operands must be numbers.", .{});
                 }
                 self.push(Value.fromBool(lhs.asNumber() < rhs.asNumber()));
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
             .Negate => {
                 const value = self.pop();
-                if (!value.isNumber()) return self.runtimeError("Operand must be a number.", .{});
+                if (!value.isNumber()) {
+                    saveAndLoad.saveIp(self, ip);
+                    return self.runtimeError("Operand must be a number.", .{});
+                }
                 self.push(Value.fromNumber(-value.asNumber()));
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
             .Add => {
                 const rhs = self.pop();
                 const lhs = self.pop();
                 if (lhs.isObj() and rhs.isObj()) {
+                    saveAndLoad.saveIp(self, ip);
                     try self.concatenate(lhs.asObj(), rhs.asObj());
                 } else if (lhs.isNumber() and rhs.isNumber()) {
                     self.push(Value.fromNumber(lhs.asNumber() + rhs.asNumber()));
                 } else {
+                    saveAndLoad.saveIp(self, ip);
                     return self.runtimeError("Operands must be two numbers or two strings.", .{});
                 }
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
             .Subtract => {
+                saveAndLoad.saveIp(self, ip);
                 try self.binaryNumericOp(sub);
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
             .Multiply => {
+                saveAndLoad.saveIp(self, ip);
                 try self.binaryNumericOp(mul);
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
             .Divide => {
+                saveAndLoad.saveIp(self, ip);
                 try self.binaryNumericOp(div);
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
             .Not => {
                 self.push(Value.fromBool(self.pop().isFalsey()));
-                continue :dispatch self.readNextOpCode();
+                continue :dispatch nextOp(&ip, code, self);
             },
         }
-    }
-
-    fn readString(self: *VM) *Obj.String {
-        const constant = self.readByte();
-        const nameValue = self.currentChunk().constants.items[constant];
-        return nameValue.asObj().asString();
     }
 
     fn binaryNumericOp(self: *VM, comptime op: anytype) !void {
@@ -481,20 +549,6 @@ pub const VM = struct {
 
     fn currentChunk(self: *VM) *Chunk {
         return &self.currentFrame().closure.function.chunk;
-    }
-
-    fn readByte(self: *VM) u8 {
-        const frame = self.currentFrame();
-        const byte = self.currentChunk().code.items[frame.ip];
-        frame.ip += 1;
-        return byte;
-    }
-
-    fn readShort(self: *VM) u16 {
-        const frame = self.currentFrame();
-        frame.ip += 2;
-        const items = self.currentChunk().code.items;
-        return (@as(u16, @intCast(items[frame.ip - 2])) << 8) | items[frame.ip - 1];
     }
 
     pub fn push(self: *VM, value: Value) void {
