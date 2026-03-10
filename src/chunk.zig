@@ -49,11 +49,6 @@ pub const Chunk = struct {
     code: []u8,
     constants: []Value,
     lines: []usize,
-    // Capacities of the backing allocations (may exceed slice lengths
-    // because we transfer ownership from ChunkBuilder without shrinking).
-    code_cap: usize = 0,
-    constants_cap: usize = 0,
-    lines_cap: usize = 0,
 
     pub const empty: Chunk = .{
         .code = &.{},
@@ -62,9 +57,9 @@ pub const Chunk = struct {
     };
 
     pub fn deinit(self: *Chunk, allocator: Allocator) void {
-        if (self.code_cap > 0) allocator.free(self.code.ptr[0..self.code_cap]);
-        if (self.constants_cap > 0) allocator.free(self.constants.ptr[0..self.constants_cap]);
-        if (self.lines_cap > 0) allocator.free(self.lines.ptr[0..self.lines_cap]);
+        if (self.code.len > 0) allocator.free(self.code);
+        if (self.constants.len > 0) allocator.free(self.constants);
+        if (self.lines.len > 0) allocator.free(self.lines);
         self.* = empty;
     }
 
@@ -213,19 +208,17 @@ pub const ChunkBuilder = struct {
 
     /// Finalize the builder into an immutable Chunk, transferring ownership
     /// of the backing memory. The builder is reset to empty afterward.
-    pub fn toChunk(self: *ChunkBuilder) Chunk {
-        const chunk = Chunk{
-            .code = self.code.items,
-            .constants = self.constants.items,
-            .lines = self.lines.items,
-            .code_cap = self.code.capacity,
-            .constants_cap = self.constants.capacity,
-            .lines_cap = self.lines.capacity,
+    pub fn toChunk(self: *ChunkBuilder) !Chunk {
+        const code = try self.code.toOwnedSlice(self.allocator);
+        errdefer self.allocator.free(code);
+        const constants = try self.constants.toOwnedSlice(self.allocator);
+        errdefer self.allocator.free(constants);
+        const lines = try self.lines.toOwnedSlice(self.allocator);
+        return .{
+            .code = code,
+            .constants = constants,
+            .lines = lines,
         };
-        self.code = .{};
-        self.constants = .{};
-        self.lines = .{};
-        return chunk;
     }
 
     pub fn write(self: *ChunkBuilder, byte: u8, line: usize) !void {
